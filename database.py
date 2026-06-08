@@ -251,7 +251,19 @@ def seed_default_if_empty():
             (8, 'Zone H (Malibu)', 34.0259, -118.7798, 8000, 'Low'),
             (9, 'Zone I (Burbank)', 34.1808, -118.3090, 14000, 'Medium'),
             (10, 'Zone J (Anaheim)', 33.8366, -117.9143, 35000, 'High'),
-            (11, 'Zone K (Beverly Hills)', 34.0736, -118.4004, 9000, 'Medium')
+            (11, 'Zone K (Beverly Hills)', 34.0736, -118.4004, 9000, 'Medium'),
+            (12, 'Zone L (Inglewood)', 33.9617, -118.3531, 16000, 'High'),
+            (13, 'Zone M (Downey)', 33.9401, -118.1332, 14000, 'Medium'),
+            (14, 'Zone N (El Monte)', 34.0686, -118.0276, 20000, 'High'),
+            (15, 'Zone O (Compton)', 33.8958, -118.2201, 18000, 'Critical'),
+            (16, 'Zone P (Pomona)', 34.0551, -117.7500, 25000, 'Medium'),
+            (17, 'Zone Q (Redondo Beach)', 33.8492, -118.3884, 11000, 'Low'),
+            (18, 'Zone R (Manhattan Beach)', 33.8847, -118.4109, 9000, 'Low'),
+            (19, 'Zone S (Culver City)', 34.0211, -118.3965, 12000, 'Medium'),
+            (20, 'Zone T (Carson)', 33.8317, -118.2817, 15000, 'High'),
+            (21, 'Zone U (Gardena)', 33.8883, -118.3090, 13000, 'Medium'),
+            (22, 'Zone V (West Covina)', 34.0686, -117.9390, 22000, 'High'),
+            (23, 'Zone W (Norwalk)', 33.9081, -118.0817, 17000, 'Critical')
         ]
         resources_list = [
             (1, 'Medicine', 500, 2.0, 100),
@@ -271,18 +283,32 @@ def seed_default_if_empty():
         roads_list = [
             (1, 'Depot', 'Zone A (Glendale)', 10.5, 'Normal'),
             (2, 'Depot', 'Zone C (East LA)', 8.2, 'Normal'),
-            (3, 'Zone A (Glendale)', 'Zone B (Pasadena)', 9.2, 'Normal'),
-            (4, 'Zone B (Pasadena)', 'Zone C (East LA)', 14.5, 'Normal'),
-            (5, 'Zone A (Glendale)', 'Zone F (Hollywood)', 11.4, 'Normal'),
-            (6, 'Zone F (Hollywood)', 'Zone K (Beverly Hills)', 6.0, 'Normal'),
-            (7, 'Zone K (Beverly Hills)', 'Zone E (Santa Monica)', 12.5, 'Normal'),
-            (8, 'Zone E (Santa Monica)', 'Zone H (Malibu)', 25.0, 'Normal'),
-            (9, 'Zone A (Glendale)', 'Zone I (Burbank)', 6.5, 'Normal'),
-            (10, 'Zone C (East LA)', 'Zone D (Torrance)', 27.1, 'Normal'),
-            (11, 'Zone D (Torrance)', 'Zone E (Santa Monica)', 28.5, 'Normal'),
+            (3, 'Depot', 'Zone S (Culver City)', 15.0, 'Normal'),
+            (4, 'Zone A (Glendale)', 'Zone B (Pasadena)', 9.2, 'Normal'),
+            (5, 'Zone B (Pasadena)', 'Zone C (East LA)', 14.5, 'Normal'),
+            (6, 'Zone A (Glendale)', 'Zone F (Hollywood)', 11.4, 'Normal'),
+            (7, 'Zone F (Hollywood)', 'Zone K (Beverly Hills)', 6.0, 'Normal'),
+            (8, 'Zone K (Beverly Hills)', 'Zone E (Santa Monica)', 12.5, 'Normal'),
+            (9, 'Zone E (Santa Monica)', 'Zone H (Malibu)', 25.0, 'Normal'),
+            (10, 'Zone A (Glendale)', 'Zone I (Burbank)', 6.5, 'Normal'),
+            (11, 'Zone C (East LA)', 'Zone D (Torrance)', 27.1, 'Normal'),
             (12, 'Zone D (Torrance)', 'Zone G (Long Beach)', 15.0, 'Normal'),
             (13, 'Zone G (Long Beach)', 'Zone J (Anaheim)', 35.0, 'Normal'),
-            (14, 'Zone F (Hollywood)', 'Zone I (Burbank)', 8.5, 'Normal')
+            (14, 'Zone F (Hollywood)', 'Zone I (Burbank)', 8.5, 'Normal'),
+            (15, 'Zone C (East LA)', 'Zone M (Downey)', 12.0, 'Normal'),
+            (16, 'Zone M (Downey)', 'Zone W (Norwalk)', 8.0, 'Normal'),
+            (17, 'Zone W (Norwalk)', 'Zone J (Anaheim)', 20.0, 'Normal'),
+            (18, 'Zone C (East LA)', 'Zone L (Inglewood)', 18.0, 'Normal'),
+            (19, 'Zone M (Downey)', 'Zone O (Compton)', 10.0, 'Normal'),
+            (20, 'Zone B (Pasadena)', 'Zone N (El Monte)', 12.0, 'Normal'),
+            (21, 'Zone N (El Monte)', 'Zone V (West Covina)', 10.0, 'Normal'),
+            (22, 'Zone V (West Covina)', 'Zone P (Pomona)', 15.0, 'Normal'),
+            (23, 'Zone E (Santa Monica)', 'Zone R (Manhattan Beach)', 18.0, 'Normal'),
+            (24, 'Zone R (Manhattan Beach)', 'Zone Q (Redondo Beach)', 5.0, 'Normal'),
+            (25, 'Zone Q (Redondo Beach)', 'Zone D (Torrance)', 6.0, 'Normal'),
+            (26, 'Zone S (Culver City)', 'Zone U (Gardena)', 15.0, 'Normal'),
+            (27, 'Zone U (Gardena)', 'Zone T (Carson)', 8.0, 'Normal'),
+            (28, 'Zone T (Carson)', 'Zone G (Long Beach)', 9.0, 'Normal')
         ]
         reset_database_state(zones_list, resources_list, vehicles_list, roads_list)
 
