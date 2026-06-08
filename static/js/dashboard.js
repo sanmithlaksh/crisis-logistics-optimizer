@@ -357,7 +357,7 @@ function renderHeap(heapArray) {
             nodeDiv.innerHTML = `
                 <div class="heap-node-index">${i}</div>
                 <div class="heap-node-score">${node.priority_score.toFixed(1)}</div>
-                <div class="heap-node-zone" title="${node.zone_name}">${node.zone_name.split(' ')[0]}</div>
+                <div class="heap-node-zone" title="${node.zone_name}">${node.zone_name.split(' (')[0]}</div>
                 <div class="heap-node-res">${node.resource_type.split(' ')[0]}</div>
             `;
             levelDiv.appendChild(nodeDiv);
@@ -670,7 +670,7 @@ window.inspectDijkstraRoute = function(zoneName) {
                             <i class="fa-solid fa-triangle-exclamation"></i> Ad-Hoc Route (No Active Dispatch)
                         </div>
                         <div class="inspector-path">
-                            ${data.path.map(n => `<span class="inspector-node">${n.split(' ')[0]}</span>`).join('')}
+                            ${data.path.map(n => `<span class="inspector-node">${n.split(' (')[0]}</span>`).join('')}
                         </div>
                         <div style="margin-top:12px;">
                             <div class="path-data-row"><span>Distance:</span> <span>${data.distance_km} km</span></div>
@@ -721,7 +721,7 @@ function renderRouteDetails(dispatch, zoneName) {
             Assigned Vehicle: <b>${dispatch.vehicle_name}</b> (${dispatch.vehicle_type})
         </div>
         <div class="inspector-path">
-            ${dispatch.path.map(n => `<span class="inspector-node">${n.split(' ')[0]}</span>`).join('')}
+            ${dispatch.path.map(n => `<span class="inspector-node">${n.split(' (')[0]}</span>`).join('')}
         </div>
         <div style="margin-top:12px;">
             <div class="path-data-row"><span>Distance:</span> <span>${dispatch.distance_km} km</span></div>
