@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crisis-Zone Logistics & Resource Allocation Optimizer</title>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Leaflet.js Map CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+    
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    
+    <!-- Custom Style Sheet -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+</head>
+<body class="dark-theme">
+    
+    <!-- App Container -->
+    <div class="app-container">
+        
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="sidebar-brand">
+                <div class="brand-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                <div class="brand-text">
+                    <h1>RES-Q OPS</h1>
+                    <span>Crisis Logistics AI</span>
+                </div>
+            </div>
+            
+            <nav class="sidebar-nav">
+                <button class="nav-btn active" data-tab="tab-inventory">
+                    <i class="fa-solid fa-warehouse"></i>
+                    <span>Resource Inventory</span>
+                </button>
+                <button class="nav-btn" data-tab="tab-requests">
+                    <i class="fa-solid fa-list-check"></i>
+                    <span>Requests & Heap</span>
+                </button>
+                <button class="nav-btn" data-tab="tab-map">
+                    <i class="fa-solid fa-map-location-dot"></i>
+                    <span>Route Visualizer</span>
+                </button>
+                <button class="nav-btn" data-tab="tab-fleet">
+                    <i class="fa-solid fa-truck-ramp-box"></i>
+                    <span>Fleet Assignment</span>
+                </button>
+                <button class="nav-btn" data-tab="tab-simulation">
+                    <i class="fa-solid fa-gauge-high"></i>
+                    <span>Sim & Analytics</span>
+                </button>
+                <button class="nav-btn" data-tab="tab-guide">
+                    <i class="fa-solid fa-book-open"></i>
+                    <span>Presentation Guide</span>
+                </button>
+            </nav>
+            
+            <div class="sidebar-status">
+                <div class="status-indicator online"></div>
+                <div class="status-info">
+                    <span class="status-title">System Status</span>
+                    <span class="status-desc" id="db-mode-label">Connecting...</span>
+                </div>
+            </div>
+        </aside>
+        
+        <!-- Main Content Area -->
+        <main class="main-content">
+            
+            <!-- Header -->
+            <header class="app-header">
+                <div class="header-left">
+                    <h2 id="current-tab-title">Resource Inventory</h2>
+                    <p class="text-secondary" id="current-tab-desc">Monitor central supply depot stock levels and manage available resource classes.</p>
+                </div>
+                <div class="header-right">
+                    <div class="scenario-selector-container">
+                        <label for="scenario-select"><i class="fa-solid fa-cloud-bolt"></i> Scenarios:</label>
+                        <select id="scenario-select">
+                            <option value="" disabled selected>Select Live Crisis Scenario</option>
+                            <option value="Flood">Flood Emergency</option>
+                            <option value="Earthquake">Earthquake Calamity</option>
+                            <option value="Cyclone">Cyclone Disaster</option>
+                            <option value="War Zone">Conflict Zone</option>
+                        </select>
+                        <button id="btn-run-sim" class="btn-primary"><i class="fa-solid fa-play"></i> Run Sim</button>
+                    </div>
+                    <button id="btn-reset-db" class="btn-outline-danger" title="Reset Database to Default State">
+                        <i class="fa-solid fa-arrow-rotate-left"></i>
+                    </button>
+                </div>
+            </header>
+            
+            <!-- Tab Pages Container -->
+            <div class="tab-pages-container">
+                
+                <!-- Tab: Resource Inventory -->
+                <div class="tab-page active" id="tab-inventory">
+                    <div class="dashboard-grid">
+                        <div class="card glass-card span-all-cols">
+                            <div class="card-header">
+                                <h3>Depot Inventory Levels</h3>
+                                <span class="badge badge-info">Live stock status</span>
+                            </div>
+                            <div class="inventory-container">
+                                <div class="inventory-cards-grid" id="inventory-list">
+                                    <!-- Dynamic Inventory Cards -->
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="card glass-card">
+                            <div class="card-header">
+                                <h3>Resource Allocation Utility Weights</h3>
+                            </div>
+                            <div class="card-body">
+                                <table class="custom-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Resource Class</th>
+                                            <th>Weight/Unit (kg)</th>
+                                            <th>Priority Utility</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="resource-weights-table">
+                                        <!-- Dynamic rows -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        
+                        <div class="card glass-card">
+                            <div class="card-header">
+                                <h3>Logistics Performance Overview</h3>
+                            </div>
+                            <div class="card-body chart-card-body">
+                                <div class="stat-large-grid">
+                                    <div class="stat-box">
+                                        <span class="stat-label">Total Zones</span>
+                                        <span class="stat-value" id="stat-total-zones">6</span>
+                                    </div>
+                                    <div class="stat-box">
+                                        <span class="stat-label">Fleet Capacity</span>
+                                        <span class="stat-value" id="stat-fleet-capacity">1140 kg</span>
+                                    </div>
+                                    <div class="stat-box">
+                                        <span class="stat-label">Active Requests</span>
+                                        <span class="stat-value text-warning" id="stat-active-requests">0</span>
+                                    </div>
+                                    <div class="stat-box">
+                                        <span class="stat-label">Average Response Time</span>
+                                        <span class="stat-value text-success" id="stat-avg-resp-time">-</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Tab: Requests & Priority Heap -->
+                <div class="tab-page" id="tab-requests">
+                    <div class="split-layout">
+                        <!-- Left Panel: Request Input and List -->
+                        <div class="split-left">
+                            <div class="card glass-card">
+                                <div class="card-header">
+                                    <h3>Generate Crisis Relief Request</h3>
+                                </div>
+                                <form id="request-form" class="card-body form-grid">
+                                    <div class="form-group">
+                                        <label for="req-zone">Affected Zone</label>
+                                        <select id="req-zone" required>
+                                            <option value="" disabled selected>Select affected zone</option>
+                                            <!-- Dynamic zones -->
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="req-resource">Resource Needed</label>
+                                        <select id="req-resource" required>
+                                            <option value="" disabled selected>Select resource class</option>
+                                            <option value="Medicine">Medicine</option>
+                                            <option value="Food Packets">Food Packets</option>
+                                            <option value="Water Crate">Water Crate</option>
+                                            <option value="Fuel Ltrs">Fuel Ltrs</option>
+                                            <option value="Rescue Gear">Rescue Gear</option>
+                                            <option value="Emergency Personnel">Emergency Personnel</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="req-qty">Quantity</label>
+                                        <input type="number" id="req-qty" min="1" max="1000" placeholder="Enter units needed" required />
+                                    </div>
+                                    <button type="submit" class="btn-primary span-all"><i class="fa-solid fa-circle-plus"></i> Submit Emergency Request</button>
+                                </form>
+                            </div>
+                            
+                            <div class="card glass-card flex-grow">
+                                <div class="card-header">
+                                    <h3>Incoming Queue</h3>
+                                    <button id="btn-run-allocation" class="btn-success btn-sm"><i class="fa-solid fa-gears"></i> Allocate Resources</button>
+                                </div>
+                                <div class="card-body table-container">
+                                    <table class="custom-table">
+                                        <thead>
+                                            <tr>
+                                                <th>ID</th>
+                                                <th>Affected Zone</th>
+                                                <th>Item Requested</th>
+                                                <th>Units</th>
+                                                <th>Priority Score</th>
+                                                <th>Status</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="requests-table-body">
+                                            <!-- Dynamic Request Rows -->
+                                            <tr><td colspan="6" class="text-center">No active requests. Select a scenario or submit a manual request.</td></tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Right Panel: Priority Queue Heap Visualization -->
+                        <div class="split-right">
+                            <div class="card glass-card h-100 flex-column">
+                                <div class="card-header">
+                                    <h3>Priority Heap Structure (Binary Max-Heap Tree)</h3>
+                                    <span class="badge badge-warning">O(log n) Operations</span>
+                                </div>
+                                <div class="card-body heap-visualization-container" id="heap-tree-visual">
+                                    <!-- Dynamic Binary Heap Node Tree Rendering -->
+                                    <div class="empty-state">
+                                        <i class="fa-solid fa-network-wired"></i>
+                                        <p>Heap is currently empty. Add requests or load a scenario to visualize the priority queue heap array layout.</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Tab: Route Visualizer -->
+                <div class="tab-page" id="tab-map">
+                    <div class="map-layout">
+                        <!-- Left Panel: Info Cards -->
+                        <div class="map-sidebar">
+                            <div class="card glass-card">
+                                <div class="card-header">
+                                    <h3>Routing Settings</h3>
+                                </div>
+                                <div class="card-body">
+                                    <div class="hazard-legend">
+                                        <p class="legend-title">Hazard Avoidance Settings</p>
+                                        <div class="legend-item"><span class="legend-color normal"></span> <span>Normal Road (Multiplier: 1.0)</span></div>
+                                        <div class="legend-item"><span class="legend-color damaged"></span> <span>Damaged Road (Multiplier: 2.0)</span></div>
+                                        <div class="legend-item"><span class="legend-color flooded"></span> <span>Flooded Road (Multiplier: 3.0)</span></div>
+                                        <div class="legend-item"><span class="legend-color danger"></span> <span>Conflict / Enemy Zone (Multiplier: 8.0)</span></div>
+                                        <div class="legend-item"><span class="legend-color blocked"></span> <span>Blocked Road (Multiplier: 9999.0)</span></div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="card glass-card flex-grow">
+                                <div class="card-header">
+                                    <h3>Dijkstra Path Inspector</h3>
+                                </div>
+                                <div class="card-body" id="route-inspector-details">
+                                    <div class="empty-state-small">
+                                        <i class="fa-solid fa-circle-info"></i>
+                                        <p>Click on any affected zone marker on the map to run Dijkstra's algorithm and view the safest optimal path.</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Map View -->
+                        <div class="map-container-wrapper">
+                            <div id="map"></div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Tab: Fleet Assignment -->
+                <div class="tab-page" id="tab-fleet">
+                    <div class="dashboard-grid">
+                        <!-- Fleet Grid -->
+                        <div class="card glass-card span-all-cols">
+                            <div class="card-header">
+                                <h3>Fleet Registry & Current Dispatch Allocations</h3>
+                                <span class="badge badge-success">Optimize Assignment via Branch & Bound</span>
+                            </div>
+                            <div class="fleet-cards-grid" id="fleet-list">
+                                <!-- Dynamic Fleet Cards -->
+                            </div>
+                        </div>
+                        
+                        <div class="card glass-card">
+                            <div class="card-header">
+                                <h3>Knapsack Vehicle Cargo Load Optimizations</h3>
+                            </div>
+                            <div class="card-body" id="cargo-knapsack-overview">
+                                <div class="empty-state-small">
+                                    <i class="fa-solid fa-box-open"></i>
+                                    <p>Select a scenario and click "Run Sim" to view the 0/1 Knapsack allocation inside the vehicle dispatch holds.</p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="card glass-card">
+                            <div class="card-header">
+                                <h3>Branch and Bound Decision Logic</h3>
+                            </div>
+                            <div class="card-body" id="bb-decision-logic">
+                                <div class="empty-state-small">
+                                    <i class="fa-solid fa-code-fork"></i>
+                                    <p>Branch and Bound explores assignment combinations. Pruning branches when current costs exceed the lower bounds. Matrix details will populate here after execution.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Tab: Sim & Analytics -->
+                <div class="tab-page" id="tab-simulation">
+                    <div class="dashboard-grid">
+                        <div class="card glass-card span-all-cols">
+                            <div class="card-header">
+                                <h3>Metrics Performance Comparison: Baseline (FCFS) vs Proposed System</h3>
+                                <p class="text-secondary" id="sim-scenario-desc">Run a scenario to analyze how algorithmic optimization handles real-time hazards compared to standard FCFS.</p>
+                            </div>
+                            <div class="metrics-grid">
+                                <div class="metric-block traditional-color">
+                                    <span class="block-title">Baseline (FCFS)</span>
+                                    <div class="metrics-stats-grid">
+                                        <div class="m-box">
+                                            <span class="m-label">Avg Response Time</span>
+                                            <span class="m-val" id="m-trad-time">-</span>
+                                        </div>
+                                        <div class="m-box">
+                                            <span class="m-label">Total Distance</span>
+                                            <span class="m-val" id="m-trad-dist">-</span>
+                                        </div>
+                                        <div class="m-box">
+                                            <span class="m-label">Resource Delivered</span>
+                                            <span class="m-val" id="m-trad-util">-</span>
+                                        </div>
+                                        <div class="m-box">
+                                            <span class="m-label">Success Rate</span>
+                                            <span class="m-val" id="m-trad-success">-</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="metric-block proposed-color">
+                                    <span class="block-title">Proposed AI Engine</span>
+                                    <div class="metrics-stats-grid">
+                                        <div class="m-box">
+                                            <span class="m-label">Avg Response Time</span>
+                                            <span class="m-val" id="m-prop-time">-</span>
+                                        </div>
+                                        <div class="m-box">
+                                            <span class="m-label">Total Distance</span>
+                                            <span class="m-val" id="m-prop-dist">-</span>
+                                        </div>
+                                        <div class="m-box">
+                                            <span class="m-label">Resource Delivered</span>
+                                            <span class="m-val" id="m-prop-util">-</span>
+                                        </div>
+                                        <div class="m-box">
+                                            <span class="m-label">Success Rate</span>
+                                            <span class="m-val" id="m-prop-success">-</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Charts -->
+                        <div class="card glass-card">
+                            <div class="card-header">
+                                <h3>Response Time & Resource Utilization Comparison</h3>
+                            </div>
+                            <div class="card-body canvas-container">
+                                <canvas id="chart-comparison-bar"></canvas>
+                            </div>
+                        </div>
+                        
+                        <div class="card glass-card">
+                            <div class="card-header">
+                                <h3>Delivery Success & Efficiency Metrics</h3>
+                            </div>
+                            <div class="card-body canvas-container">
+                                <canvas id="chart-comparison-radar"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Tab: Presentation Guide -->
+                <div class="tab-page" id="tab-guide">
+                    <div class="dashboard-grid">
+                        <div class="card glass-card span-all-cols">
+                            <div class="card-header">
+                                <h3>Demonstration and Presentation Guide</h3>
+                                <span class="badge badge-info">DAA Algorithm Explanations</span>
+                            </div>
+                            <div class="card-body">
+                                <p style="margin-bottom: 15px; line-height: 1.6; color: var(--text-secondary);">
+                                    Use this guide to walk your teammates or evaluators through a live demonstration of the crisis logistics system. Below are step-by-step instructions for each algorithmic component.
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- Card: Max-Heap -->
+                        <div class="card glass-card">
+                            <div class="card-header">
+                                <h3>DEMO 1: Max-Heap Priority Ranking</h3>
+                            </div>
+                            <div class="card-body" style="font-size: 13px; line-height: 1.6;">
+                                <p style="margin-bottom: 8px;"><strong>Goal:</strong> Show how the system ranks incoming requests by urgency using a Binary Max-Heap.</p>
+                                <p style="margin-bottom: 6px;"><strong>Steps:</strong></p>
+                                <ol style="padding-left: 20px; margin-bottom: 15px;">
+                                    <li>Go to the <strong>Requests & Heap</strong> tab.</li>
+                                    <li>In the <strong>Generate Crisis Relief Request</strong> form, submit two custom requests:
+                                        <ul style="padding-left: 15px; margin-top: 5px;">
+                                            <li>Request A: Zone E (Santa Monica) (Severity: Low), Resource: Medicine, Quantity: 50.</li>
+                                            <li>Request B: Zone A (Glendale) (Severity: Critical), Resource: Water Crate, Quantity: 200.</li>
+                                        </ul>
+                                    </li>
+                                    <li>Observe the <strong>Binary Max-Heap Tree</strong> on the right.</li>
+                                </ol>
+                                <p><strong>Explanation:</strong> Request B automatically bubbles up to the root node (index 0) due to Glendale's high priority. Score formula: <code>Priority = (Severity Weight * 10) + (Population / 10,000)</code>. Heap maintains sorting in O(log n) time.</p>
+                            </div>
+                        </div>
+
+                        <!-- Card: Greedy Allocation -->
+                        <div class="card glass-card">
+                            <div class="card-header">
+                                <h3>DEMO 2: Greedy Resource Allocation</h3>
+                            </div>
+                            <div class="card-body" style="font-size: 13px; line-height: 1.6;">
+                                <p style="margin-bottom: 8px;"><strong>Goal:</strong> Show how supplies are distributed to the most critical zones first, handling inventory depletion.</p>
+                                <p style="margin-bottom: 6px;"><strong>Steps:</strong></p>
+                                <ol style="padding-left: 20px; margin-bottom: 15px;">
+                                    <li>Go to the <strong>Requests & Heap</strong> tab.</li>
+                                    <li>Click the green <strong>Allocate Resources</strong> button.</li>
+                                    <li>Watch the Status column change to "Allocated", "Partial", or "Unfulfilled".</li>
+                                    <li>Go back to the <strong>Resource Inventory</strong> tab and check the stock levels.</li>
+                                </ol>
+                                <p><strong>Explanation:</strong> A greedy strategy pops the highest-priority request off the heap and allocates remaining warehouse stock up to <code>min(Requested, Available)</code>, maximizing immediate disaster mitigation.</p>
+                            </div>
+                        </div>
+
+                        <!-- Card: Dijkstra -->
+                        <div class="card glass-card">
+                            <div class="card-header">
+                                <h3>DEMO 3: Risk-Weighted Dijkstra Routing</h3>
+                            </div>
+                            <div class="card-body" style="font-size: 13px; line-height: 1.6;">
+                                <p style="margin-bottom: 8px;"><strong>Goal:</strong> Show how the system finds the safest path by avoiding active hazards.</p>
+                                <p style="margin-bottom: 6px;"><strong>Steps:</strong></p>
+                                <ol style="padding-left: 20px; margin-bottom: 15px;">
+                                    <li>Go to the <strong>Route Visualizer</strong> tab.</li>
+                                    <li>Click on <strong>Zone H (Malibu)</strong> or <strong>Zone J (Anaheim)</strong> on the map.</li>
+                                    <li>Click <strong>Inspect Route</strong> in the popup.</li>
+                                    <li>Watch the cyan line animation detour around red (Blocked) or blue (Flooded) roads.</li>
+                                </ol>
+                                <p><strong>Explanation:</strong> Path selection is based on <code>Effective Weight = Distance * Hazard Multiplier</code>. Flooded roads increase the cost by 3.0x, while blocked roads cost 9999.0x, forcing the route around hazards.</p>
+                            </div>
+                        </div>
+
+                        <!-- Card: Knapsack -->
+                        <div class="card glass-card">
+                            <div class="card-header">
+                                <h3>DEMO 4: 0/1 Knapsack Cargo Loading</h3>
+                            </div>
+                            <div class="card-body" style="font-size: 13px; line-height: 1.6;">
+                                <p style="margin-bottom: 8px;"><strong>Goal:</strong> Show how vehicles optimize cargo weight limits to carry the most valuable items.</p>
+                                <p style="margin-bottom: 6px;"><strong>Steps:</strong></p>
+                                <ol style="padding-left: 20px; margin-bottom: 15px;">
+                                    <li>Select a scenario in the header (e.g. Flood Emergency) and click <strong>Run Sim</strong>.</li>
+                                    <li>Go to the <strong>Fleet Assignment</strong> tab.</li>
+                                    <li>Scroll down to the <strong>Knapsack Vehicle Cargo Load Optimizations</strong> panel.</li>
+                                </ol>
+                                <p><strong>Explanation:</strong> Evaluates items to fit vehicle weight capacity while maximizing total priority utility. Solves the Dynamic Programming formula: <code>DP[i][w] = max(DP[i-1][w], DP[i-1][w-w_i] + v_i)</code>.</p>
+                            </div>
+                        </div>
+
+                        <!-- Card: Branch & Bound -->
+                        <div class="card glass-card">
+                            <div class="card-header">
+                                <h3>DEMO 5: Branch & Bound & Comparison</h3>
+                            </div>
+                            <div class="card-body" style="font-size: 13px; line-height: 1.6;">
+                                <p style="margin-bottom: 8px;"><strong>Goal:</strong> Show how the fleet is optimally matched to zones and compare results to FCFS.</p>
+                                <p style="margin-bottom: 6px;"><strong>Steps:</strong></p>
+                                <ol style="padding-left: 20px; margin-bottom: 15px;">
+                                    <li>Look at the <strong>Branch and Bound Decision Logic</strong> on the Fleet Assignment tab.</li>
+                                    <li>Navigate to the <strong>Sim & Analytics</strong> tab to compare FCFS with the AI Engine.</li>
+                                </ol>
+                                <p><strong>Explanation:</strong> Branch & Bound matches vehicles to zones to minimize <code>Cost = Travel Cost + Route Risk + Unfulfilled Cargo Penalty</code>, pruning sub-optimal branches. The analytics charts show our AI Engine outperforms FCFS on all metrics.</p>
+                            </div>
+                        </div>
+
+                        <!-- Card: Additional Demos -->
+                        <div class="card glass-card">
+                            <div class="card-header">
+                                <h3>ADVANCED: Real-Time Dynamic & Fallback Demos</h3>
+                            </div>
+                            <div class="card-body" style="font-size: 13px; line-height: 1.6;">
+                                <p style="margin-bottom: 8px;"><strong>Dynamic Recalculation:</strong> Inspect the route to Burbank under "Flood Emergency" versus "Conflict Zone". The route changes dynamically as hazard profiles shift.</p>
+                                <p><strong>Database Resilience:</strong> If Supabase is offline, the app switches to the local SQLite database fallback (badge changes from green "Supabase Mode" to yellow "SQLite Mode") without interrupting the system.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+            </div>
+        </main>
+        
+    </div>
+    
+    <!-- Leaflet.js Map Library -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    
+    <!-- Chart.js Library -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- Application Scripts -->
+    <script src="{{ url_for('static', filename='js/charts.js') }}?v=1.1"></script>
+    <script src="{{ url_for('static', filename='js/map.js') }}?v=1.1"></script>
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}?v=1.1"></script>
+</body>
+</html>
