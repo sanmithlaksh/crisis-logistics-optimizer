@@ -538,6 +538,15 @@ function renderKnapsackOverview(dispatches) {
         let loadRows = '';
         let loadedWeight = 0;
         let loadedValue = 0;
+
+        // Calculate total loaded value first to determine percentage contribution
+        let totalValForPct = 0;
+        Object.entries(d.loaded_resources).forEach(([name, qty]) => {
+            const res = appData.resources.find(r => r.resource_name === name);
+            const val = res ? res.utility_value : 0;
+            totalValForPct += val * qty;
+        });
+
         Object.entries(d.loaded_resources).forEach(([name, qty]) => {
             const res = appData.resources.find(r => r.resource_name === name);
             const wt = res ? res.unit_weight : 0;
@@ -547,10 +556,12 @@ function renderKnapsackOverview(dispatches) {
             loadedWeight += totalW;
             loadedValue += totalV;
 
+            const valPct = totalValForPct > 0 ? ((totalV / totalValForPct) * 100).toFixed(1) : '0.0';
+
             loadRows += `
                 <div class="knapsack-item-bar">
                     <span>${name} (x${qty})</span>
-                    <span class="badge badge-success">${totalW.toFixed(1)} kg | +${totalV} pts</span>
+                    <span class="badge badge-success">${totalW.toFixed(1)} kg | +${totalV} pts (${valPct}%)</span>
                 </div>
             `;
         });
