@@ -1131,3 +1131,164 @@ h1, h2, h3, h4, h5, h6 {
     }
 }
 
+/* ==========================================================================
+   UPGRADE UI COMPONENTS
+   ========================================================================== */
+
+/* Metrics Ribbon */
+.metrics-ribbon {
+    display: grid;
+    grid-template-columns: repeat(9, 1fr);
+    gap: 8px;
+    padding: 12px;
+    margin-bottom: 16px;
+    border-radius: 12px;
+    background: rgba(18, 26, 47, 0.45);
+    border: 1px solid var(--border-glass);
+}
+
+.metric-ribbon-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--border-glass);
+    border-radius: 8px;
+    min-width: 0;
+}
+
+.metric-ribbon-item i {
+    font-size: 16px;
+}
+
+.metric-ribbon-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.metric-ribbon-text span {
+    font-family: var(--font-heading);
+    font-weight: 700;
+    font-size: 13px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.metric-ribbon-text label {
+    font-size: 9px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Sim Control Deck */
+.sim-control-deck {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    margin-bottom: 20px;
+    border-radius: 12px;
+    background: rgba(18, 26, 47, 0.3);
+    border: 1px solid var(--border-glass);
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.deck-label {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--primary);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.deck-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.btn-outline-primary, .btn-outline-warning, .btn-outline-success, .btn-outline-danger {
+    font-family: var(--font-body);
+    font-weight: 600;
+    font-size: 11px;
+    padding: 6px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    background: transparent;
+    border: 1px solid transparent;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.2s ease;
+}
+
+.btn-outline-primary { color: var(--primary); border-color: rgba(0, 242, 254, 0.3); }
+.btn-outline-primary:hover { background: rgba(0, 242, 254, 0.1); border-color: var(--primary); }
+
+.btn-outline-warning { color: var(--warning); border-color: rgba(255, 214, 0, 0.3); }
+.btn-outline-warning:hover { background: rgba(255, 214, 0, 0.1); border-color: var(--warning); }
+
+.btn-outline-success { color: var(--success); border-color: rgba(0, 230, 118, 0.3); }
+.btn-outline-success:hover { background: rgba(0, 230, 118, 0.1); border-color: var(--success); }
+
+.btn-outline-danger { color: var(--danger); border-color: rgba(255, 23, 68, 0.3); }
+.btn-outline-danger:hover { background: rgba(255, 23, 68, 0.1); border-color: var(--danger); }
+
+/* Hazard toggles next to legend */
+.btn-toggle-hazard {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border-glass);
+    color: var(--text-primary);
+    font-family: var(--font-body);
+    font-weight: bold;
+    font-size: 9px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-toggle-hazard:hover {
+    background: var(--primary);
+    color: var(--bg-base);
+    box-shadow: 0 0 8px var(--primary-glow);
+}
+
+/* Zone Toggle active/offline */
+.btn-active-toggle {
+    transition: all 0.2s ease;
+}
+
+.btn-active-toggle:hover {
+    transform: scale(1.05);
+}
+
+.severity-deactivated {
+    color: var(--text-muted);
+    font-weight: 500;
+}
+
+.text-purple {
+    color: #c084fc !important;
+}
+
+.font-code {
+    font-family: monospace;
+}
+
+.btn-xs {
+    padding: 2px 6px;
+    font-size: 9px;
+    border-radius: 4px;
+}
+
+

@@ -1,4 +1,6 @@
 import math
+import time
+import random
 from algorithms.priority_queue import PriorityHeap, RequestItem
 from algorithms.resource_allocation import ResourceAllocationEngine
 from algorithms.knapsack import KnapsackOptimizer
@@ -10,10 +12,10 @@ class SimulationEngine:
         'Flood': {
             'description': 'Severe flooding across northern and eastern routes. Clean water and food are critical.',
             'road_modifications': {
-                ('Depot', 'Zone C (East LA)'): 'Flooded',
+                ('Depot A (Central)', 'Zone C (East LA)'): 'Flooded',
                 ('Zone A (Glendale)', 'Zone B (Pasadena)'): 'Flooded',
-                ('Zone B (Pasadena)', 'Depot'): 'Flooded',
-                ('Depot', 'Zone G (Long Beach)'): 'Flooded',
+                ('Zone B (Pasadena)', 'Depot A (Central)'): 'Flooded',
+                ('Depot B (South)', 'Zone G (Long Beach)'): 'Flooded',
                 ('Zone C (East LA)', 'Zone G (Long Beach)'): 'Flooded'
             },
             'requests': [
@@ -32,10 +34,10 @@ class SimulationEngine:
         'Earthquake': {
             'description': 'Severe structural damage. Hollywood route blocked. Medical kits and rescue gear are critical.',
             'road_modifications': {
-                ('Depot', 'Zone F (Hollywood)'): 'Blocked',
+                ('Depot A (Central)', 'Zone F (Hollywood)'): 'Blocked',
                 ('Zone F (Hollywood)', 'Zone K (Beverly Hills)'): 'Blocked',
                 ('Zone D (Torrance)', 'Zone E (Santa Monica)'): 'Damaged',
-                ('Depot', 'Zone E (Santa Monica)'): 'Damaged',
+                ('Depot C (West)', 'Zone E (Santa Monica)'): 'Damaged',
                 ('Zone E (Santa Monica)', 'Zone H (Malibu)'): 'Blocked'
             },
             'requests': [
@@ -53,7 +55,7 @@ class SimulationEngine:
         'Cyclone': {
             'description': 'High winds. Coastal routes blocked. Food, water, and emergency personnel are critical.',
             'road_modifications': {
-                ('Depot', 'Zone E (Santa Monica)'): 'Blocked',
+                ('Depot C (West)', 'Zone E (Santa Monica)'): 'Blocked',
                 ('Zone E (Santa Monica)', 'Zone F (Hollywood)'): 'Blocked',
                 ('Zone C (East LA)', 'Zone D (Torrance)'): 'Damaged',
                 ('Zone E (Santa Monica)', 'Zone K (Beverly Hills)'): 'Blocked'
@@ -73,9 +75,9 @@ class SimulationEngine:
         'War Zone': {
             'description': 'Active conflict in Glendale and Hollywood. High risk of route closures. Fuel and medicine are critical.',
             'road_modifications': {
-                ('Depot', 'Zone A (Glendale)'): 'Enemy-Controlled',
+                ('Depot A (Central)', 'Zone A (Glendale)'): 'Enemy-Controlled',
                 ('Zone F (Hollywood)', 'Zone A (Glendale)'): 'Enemy-Controlled',
-                ('Depot', 'Zone F (Hollywood)'): 'Blocked',
+                ('Depot A (Central)', 'Zone F (Hollywood)'): 'Blocked',
                 ('Zone A (Glendale)', 'Zone I (Burbank)'): 'Enemy-Controlled'
             },
             'requests': [
@@ -112,6 +114,71 @@ class SimulationEngine:
         return modified
 
     @classmethod
+    def spread_disaster_bfs(cls, zones, roads, num_spreads=3):
+        """
+        BFS algorithm to spread severity to neighboring zones.
+        """
+        active_zones = [z for z in zones if z['is_active'] and not z['is_depot']]
+        if not active_zones:
+            return []
+
+        # Start queue with zones currently ranked Critical or High
+        queue = []
+        severity_map = {z['name']: z['severity'] for z in zones}
+        
+        for z in active_zones:
+            if z['severity'] in ('Critical', 'High'):
+                queue.append(z['name'])
+
+        # If no Critical/High zones exist, start from a random active zone
+        if not queue:
+            random_zone = random.choice(active_zones)
+            queue.append(random_zone['name'])
+
+        visited = set(queue)
+        spread_count = 0
+        newly_affected = []
+
+        # Build adjacency list
+        adj = {}
+        for r in roads:
+            u, v = r['source'], r['destination']
+            if u not in adj: adj[u] = []
+            if v not in adj: adj[v] = []
+            adj[u].append(v)
+            adj[v].append(u)
+
+        while queue and spread_count < num_spreads:
+            curr = queue.pop(0)
+            if curr not in adj:
+                continue
+
+            for neighbor in adj[curr]:
+                # Skip depots and deactivated zones
+                n_zone = next((z for z in zones if z['name'] == neighbor), None)
+                if not n_zone or n_zone['is_depot'] or not n_zone['is_active']:
+                    continue
+
+                if neighbor not in visited:
+                    curr_sev = severity_map.get(neighbor, 'Low')
+                    next_sev = 'Medium'
+                    if curr_sev == 'Medium':
+                        next_sev = 'High'
+                    elif curr_sev == 'High' or curr_sev == 'Critical':
+                        next_sev = 'Critical'
+
+                    severity_map[neighbor] = next_sev
+                    visited.add(neighbor)
+                    newly_affected.append({'id': n_zone['id'], 'name': neighbor, 'severity': next_sev})
+                    spread_count += 1
+                    queue.append(neighbor)
+                    
+                    if spread_count >= num_spreads:
+                        break
+
+        return newly_affected
+
+    @classmethod
     def run_simulation(cls, scenario_name, base_zones, base_resources, base_vehicles, base_roads):
         scenario = cls.SCENARIOS.get(scenario_name)
         if not scenario:
@@ -119,22 +186,53 @@ class SimulationEngine:
 
         # 1. Modify roads and requests based on scenario
         modified_roads = cls.get_modified_roads(base_roads, scenario_name)
+        
+        # Filter active zones and depots
+        active_zones = [z for z in base_zones if z['is_active']]
+        active_zone_names = {z['name'] for z in active_zones}
+        inactive_zone_names = {z['name'] for z in base_zones if not z['is_active']}
+        active_depot_names = [z['name'] for z in active_zones if z['is_depot']]
+        if not active_depot_names:
+            active_depot_names = ['Depot A (Central)']
+
         requests_list = []
         for i, req in enumerate(scenario['requests']):
-            # Add request_id for simulation
-            req_copy = dict(req)
-            req_copy['request_id'] = 100 + i
-            requests_list.append(req_copy)
+            if req['zone_name'] in active_zone_names:
+                req_copy = dict(req)
+                req_copy['request_id'] = 100 + i
+                requests_list.append(req_copy)
 
-        # Build dict inventory
         initial_inventory = {r['resource_name']: r['available_quantity'] for r in base_resources}
         resource_details = {r['resource_name']: r for r in base_resources}
 
-        # --- Pipeline A: Proposed Method ---
+        # --- Proposed Method Pipeline & Execution Profiling ---
+        stats = {
+            'heap_ops': 0,
+            'dijkstra_ops': 0,
+            'bb_nodes': 0,
+            'exec_time_ms': 0.0
+        }
+
+        t_start = time.perf_counter()
+
         # 1. Priority Queue Ranks Requests
+        heap = PriorityHeap()
+        for req in requests_list:
+            item = RequestItem(
+                req['request_id'], req['zone_id'], req['zone_name'],
+                req['resource_type'], req['quantity'], req['severity'], req['population']
+            )
+            heap.push(item)
+            stats['heap_ops'] += 1
+
+        ranked_requests = []
+        while heap.size() > 0:
+            ranked_requests.append(heap.pop().__dict__)
+            stats['heap_ops'] += 1
+
         # 2. Greedy Allocation Engine
         allocations_prop, updated_inv_prop = ResourceAllocationEngine.allocate_resources(
-            requests_list, initial_inventory
+            ranked_requests, initial_inventory
         )
 
         # Group allocations by zone for vehicle assignment
@@ -156,10 +254,26 @@ class SimulationEngine:
         
         zones_with_res_list = list(zones_with_res.values())
 
-        # 3. Branch and Bound Vehicle Assignment (includes Knapsack loading & Dijkstra routes)
-        assignments_prop, _ = BranchBoundAssigner.solve_assignment(
-            base_vehicles, zones_with_res_list, modified_roads, DijkstraRouter
-        )
+        # 3. Branch and Bound Vehicle Assignment
+        assignments_prop = []
+        if zones_with_res_list:
+            assignments_prop, bb_details = BranchBoundAssigner.solve_assignment(
+                base_vehicles, zones_with_res_list, modified_roads, DijkstraRouter,
+                depots=active_depot_names, inactive_zones=inactive_zone_names
+            )
+            stats['dijkstra_ops'] += len(base_vehicles) * len(zones_with_res_list) * len(active_depot_names)
+            stats['bb_nodes'] += len(bb_details)
+        else:
+            # All vehicles idle
+            for v in base_vehicles:
+                assignments_prop.append({
+                    'vehicle_id': v['vehicle_id'], 'vehicle_name': v['name'], 'vehicle_type': v['type'],
+                    'assigned_zone': 'Idle', 'zone_id': None, 'path': [], 'distance_km': 0.0,
+                    'travel_time_min': 0.0, 'travel_cost': 0.0, 'risk_penalty': 0.0, 'capacity_penalty': 0.0,
+                    'total_cost': 0.0, 'loaded_resources': {}, 'left_behind_resources': {}, 'risks': [], 'optimal_depot': None
+                })
+
+        stats['exec_time_ms'] = round((time.perf_counter() - t_start) * 1000.0, 3)
 
         # Compute Metrics for Proposed
         total_dist_prop = 0.0
@@ -179,18 +293,12 @@ class SimulationEngine:
                 if 'Blocked' not in assign['risks']:
                     success_count_prop += 1
                     delivered_units_prop += sum(assign['loaded_resources'].values())
-                else:
-                    # Vehicle hit a blockage (should not happen in proposed Dijkstra, but safety check)
-                    pass
 
-        # Calculate average response time
-        # Immediate priority engine processing: 5 mins base + travel time
         avg_response_prop = (total_time_prop + (total_dispatches_prop * 5.0)) / max(total_dispatches_prop, 1)
 
-        # --- Pipeline B: Traditional Method (FCFS + Static Shortest Path + Simple Assignment) ---
-        # 1. Allocation: FCFS (process requests in list order)
-        current_inv_trad = dict(initial_inventory)
+        # --- Traditional FCFS Method Pipeline ---
         allocations_trad = []
+        current_inv_trad = dict(initial_inventory)
         for req in requests_list:
             res_type = req['resource_type']
             requested_qty = req['quantity']
@@ -209,16 +317,10 @@ class SimulationEngine:
                     status = 'Partial'
             
             allocations_trad.append({
-                'request_id': req['request_id'],
-                'zone_id': req['zone_id'],
-                'zone_name': req['zone_name'],
-                'resource_type': res_type,
-                'requested_quantity': requested_qty,
-                'allocated_quantity': allocated_qty,
-                'status': status
+                'request_id': req['request_id'], 'zone_id': req['zone_id'], 'zone_name': req['zone_name'],
+                'resource_type': res_type, 'requested_quantity': requested_qty, 'allocated_quantity': allocated_qty, 'status': status
             })
 
-        # Group allocations by zone for traditional
         zones_with_res_trad = {}
         for alloc in allocations_trad:
             if alloc['status'] in ('Allocated', 'Partial') and alloc['allocated_quantity'] > 0:
@@ -229,44 +331,29 @@ class SimulationEngine:
                 
                 res_meta = resource_details[alloc['resource_type']]
                 zones_with_res_trad[z_id]['resources'].append({
-                    'resource_name': alloc['resource_type'],
-                    'quantity': alloc['allocated_quantity'],
-                    'unit_weight': res_meta['unit_weight'],
-                    'utility_value': res_meta['utility_value']
+                    'resource_name': alloc['resource_type'], 'quantity': alloc['allocated_quantity'],
+                    'unit_weight': res_meta['unit_weight'], 'utility_value': res_meta['utility_value']
                 })
         
         zones_with_res_trad_list = list(zones_with_res_trad.values())
 
-        # Simple assignment: Assign vehicle sequentially to zones
         assignments_trad = []
         vehicles_available = list(base_vehicles)
-        
-        # Static Dijkstra router that ignores risks (all risk_multipliers = 1.0)
-        static_multipliers = {
-            'Normal': 1.0,
-            'Damaged': 1.0,
-            'Flooded': 1.0,
-            'Enemy-Controlled': 1.0,
-            'Blocked': 1.0  # FCFS ignores blockages and tries to cross
-        }
+        static_multipliers = {'Normal': 1.0, 'Damaged': 1.0, 'Flooded': 1.0, 'Enemy-Controlled': 1.0, 'Blocked': 1.0}
 
         for idx, zone in enumerate(zones_with_res_trad_list):
             if idx < len(vehicles_available):
                 vehicle = vehicles_available[idx]
                 zone_name = zone['zone_name']
                 
-                # Run Dijkstra ignoring road conditions
+                # FCFS always starts from the first depot 'Depot A (Central)'
                 path, distance, _, risks = DijkstraRouter.find_shortest_path(
-                    modified_roads, 'Depot', zone_name, risk_multipliers=static_multipliers
+                    modified_roads, 'Depot A (Central)', zone_name, risk_multipliers=static_multipliers, inactive_zones=inactive_zone_names
                 )
                 
-                # Check if actual road network has 'Blocked' road.
-                # In traditional, if the chosen path contains a 'Blocked' road, it is a FAILURE.
-                # If path contains 'Flooded' or 'Enemy-Controlled', they get delayed but might arrive.
-                # Travel speed is normal.
                 travel_time = (distance / vehicle['speed_kmh']) * 60.0 if vehicle['speed_kmh'] > 0 and path else 0.0
                 
-                # Simple vehicle loading (load whatever fits, sequential)
+                # Simple FCFS loading
                 loaded_items = {}
                 left_behind = {}
                 curr_wt = 0.0
@@ -292,24 +379,15 @@ class SimulationEngine:
                     if qty - loaded_qty > 0:
                         left_behind[name] = qty - loaded_qty
 
-                # If path has a 'Blocked' road, it fails
+                # Mark route failed if path crosses blocked road
                 is_blocked = 'Blocked' in risks
 
                 assignments_trad.append({
-                    'vehicle_id': vehicle['vehicle_id'],
-                    'vehicle_name': vehicle['name'],
-                    'assigned_zone': zone_name,
-                    'path': path,
-                    'distance_km': distance,
-                    'travel_time_min': travel_time,
-                    'loaded_resources': loaded_items,
-                    'is_failed': is_blocked,
-                    'risks': risks
+                    'vehicle_id': vehicle['vehicle_id'], 'vehicle_name': vehicle['name'], 'vehicle_type': vehicle['type'],
+                    'assigned_zone': zone_name, 'path': path, 'distance_km': distance, 'travel_time_min': travel_time,
+                    'loaded_resources': loaded_items, 'is_failed': is_blocked, 'risks': risks
                 })
-            else:
-                break # out of vehicles
 
-        # Compute Metrics for Traditional
         total_dist_trad = 0.0
         total_time_trad = 0.0
         success_count_trad = 0
@@ -320,21 +398,20 @@ class SimulationEngine:
             total_dispatches_trad += 1
             total_dist_trad += assign['distance_km']
             if assign['is_failed']:
-                # Penalize failed delivery: long delay, distance traveled is added, but no delivery success.
-                total_time_trad += 180.0 # 3 hours penalty
+                total_time_trad += 180.0
             else:
                 total_time_trad += assign['travel_time_min']
                 success_count_trad += 1
                 delivered_units_trad += sum(assign['loaded_resources'].values())
 
-        # Response time: FCFS scheduling delay (e.g., 30 mins base delay) + travel time
         avg_response_trad = (total_time_trad + (total_dispatches_trad * 30.0)) / max(total_dispatches_trad, 1)
 
-        # Performance comparisons
+        # Aggregate final comparisons
         metrics = {
             'scenario': scenario_name,
             'description': scenario['description'],
             'requested_units': requested_units_total,
+            'stats': stats,
             'traditional': {
                 'avg_response_time_min': round(avg_response_trad, 2),
                 'total_distance_km': round(total_dist_trad, 2),

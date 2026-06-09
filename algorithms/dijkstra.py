@@ -11,32 +11,37 @@ class DijkstraRouter:
     }
 
     @classmethod
-    def find_shortest_path(cls, roads, source, destination, risk_multipliers=None):
+    def find_shortest_path(cls, roads, source, destination, risk_multipliers=None, inactive_zones=None):
         """
         Calculates the safest and shortest path from source to destination.
-        roads: List of dicts, each with {
-            'source': str,
-            'destination': str,
-            'distance_km': float,
-            'risk_level': str
-        }
+        roads: List of dicts
         source: str
         destination: str
-        risk_multipliers: Dict override for risk multipliers
+        risk_multipliers: Dict override
+        inactive_zones: Set or list of deactivated zone names
         
         Returns:
             path: List of strings (nodes) representing the path
             total_distance: float
             total_effective_weight: float (risk-weighted cost)
-            path_risk_levels: List of strings representing risk level of each traversed road
+            path_risk_levels: List of strings
         """
         multipliers = risk_multipliers or cls.DEFAULT_RISK_MULTIPLIERS
+        inactive = set(inactive_zones) if inactive_zones else set()
         
+        if source in inactive or destination in inactive:
+            return [], 0.0, 0.0, []
+
         # Build adjacency list
         graph = {}
         for road in roads:
             u = road['source']
             v = road['destination']
+            
+            # Skip deactivated nodes/edges
+            if u in inactive or v in inactive:
+                continue
+                
             dist = road['distance_km']
             risk = road['risk_level']
             mult = multipliers.get(risk, 1.0)
@@ -52,7 +57,6 @@ class DijkstraRouter:
             graph[v].append({'to': u, 'dist': dist, 'weight': weight, 'risk': risk})
 
         # Dijkstra algorithm
-        # min-heap stores: (cumulative_weight, current_node, path_so_far, cumulative_distance, risk_list)
         pq = [(0.0, source, [source], 0.0, [])]
         visited = set()
 
@@ -84,5 +88,28 @@ class DijkstraRouter:
                         risks + [edge_risk]
                     ))
 
-        # Return empty if unreachable
         return [], 0.0, 0.0, []
+
+    @classmethod
+    def find_shortest_path_multi_depot(cls, roads, depots, destination, risk_multipliers=None, inactive_zones=None):
+        """
+        Calculates the safest and shortest path from the optimal depot among available depots.
+        """
+        best_path = []
+        best_dist = float('inf')
+        best_eff_wt = float('inf')
+        best_risks = []
+        best_depot = None
+
+        for depot in depots:
+            path, dist, eff_wt, risks = cls.find_shortest_path(
+                roads, depot, destination, risk_multipliers, inactive_zones
+            )
+            if path and eff_wt < best_eff_wt:
+                best_path = path
+                best_dist = dist
+                best_eff_wt = eff_wt
+                best_risks = risks
+                best_depot = depot
+                
+        return best_path, best_dist, best_eff_wt, best_risks, best_depot

@@ -44,28 +44,25 @@ function setupTabNavigation() {
         btn.addEventListener('click', () => {
             const targetTab = btn.getAttribute('data-tab');
 
-            // Toggle button states
             navButtons.forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
 
-            // Toggle pages
             tabPages.forEach(p => p.classList.remove('active'));
             document.getElementById(targetTab).classList.add('active');
 
-            // Update Headers
             const config = tabConfig[targetTab];
             if (config) {
                 document.getElementById('current-tab-title').innerText = config.title;
                 document.getElementById('current-tab-desc').innerText = config.desc;
             }
 
-            // Perform tab-specific actions
             if (targetTab === 'tab-map') {
                 setTimeout(() => {
                     initMap();
                     if (mapInstance) {
-                        mapInstance.invalidateSize(); // Reset size for Leaflet container
+                        mapInstance.invalidateSize();
                         updateMapData(appData.zones, appData.roads, appData.requests);
+                        renderZoneToggles();
                     }
                 }, 200);
             }
@@ -87,10 +84,11 @@ function loadDashboardData() {
                 renderRequests();
                 renderFleet();
                 populateRequestForms();
+                updateLiveMetrics();
                 
-                // Update map if initialized
                 if (mapInstance && document.getElementById('tab-map').classList.contains('active')) {
                     updateMapData(appData.zones, appData.roads, appData.requests);
+                    renderZoneToggles();
                 }
             } else {
                 showErrorNotification(data.message);
@@ -113,15 +111,13 @@ function updateDBModeLabel() {
 // ==========================================================================
 // 3. UI Renders
 // ==========================================================================
-
-// Tab 1: Render Inventory
 function renderInventory() {
     const container = document.getElementById('inventory-list');
     const tableBody = document.getElementById('resource-weights-table');
+    if (!container || !tableBody) return;
     container.innerHTML = '';
     tableBody.innerHTML = '';
 
-    // Icons map for resources
     const icons = {
         'Medicine': '<i class="fa-solid fa-kit-medical"></i>',
         'Food Packets': '<i class="fa-solid fa-box-tissue"></i>',
@@ -131,7 +127,6 @@ function renderInventory() {
         'Emergency Personnel': '<i class="fa-solid fa-user-doctor"></i>'
     };
 
-    // Capacity maximums for slider representation
     const maxCaps = {
         'Medicine': 500,
         'Food Packets': 1000,
@@ -146,7 +141,6 @@ function renderInventory() {
         const maxVal = maxCaps[res.resource_name] || 1000;
         const fillPct = (res.available_quantity / maxVal) * 100;
 
-        // Inventory list cards
         const card = document.createElement('div');
         card.className = 'inventory-card';
         card.innerHTML = `
@@ -165,7 +159,6 @@ function renderInventory() {
         `;
         container.appendChild(card);
 
-        // Weights table
         const row = document.createElement('tr');
         row.innerHTML = `
             <td><b>${res.resource_name}</b></td>
@@ -176,9 +169,9 @@ function renderInventory() {
     });
 }
 
-// Tab 2: Render Requests List & populate dropdowns
 function renderRequests() {
     const tableBody = document.getElementById('requests-table-body');
+    if (!tableBody) return;
     tableBody.innerHTML = '';
 
     const pendingRequests = appData.requests.filter(r => r.status === 'Pending');
@@ -190,7 +183,6 @@ function renderRequests() {
         return;
     }
 
-    // Sort requests by priority score descending for table view
     const sortedRequests = [...appData.requests].sort((a, b) => b.priority - a.priority);
 
     sortedRequests.forEach(req => {
@@ -206,7 +198,14 @@ function renderRequests() {
         else if (req.severity === 'Medium') sevClass = 'severity-medium';
         else if (req.severity === 'Low') sevClass = 'severity-low';
 
+        // Gray out if zone is deactivated
+        const isDeactivated = req.is_active === 0 || req.is_active === false;
+        if (isDeactivated) {
+            statusBadge = '<span class="badge" style="background:#475569; color:#fff;">Offline Zone</span>';
+        }
+
         const row = document.createElement('tr');
+        row.style.opacity = isDeactivated ? 0.45 : 1.0;
         row.innerHTML = `
             <td>#${req.request_id}</td>
             <td><b>${req.zone_name}</b> <span class="badge badge-info" style="font-size:8px;">Pop: ${req.population}</span></td>
@@ -218,22 +217,21 @@ function renderRequests() {
         tableBody.appendChild(row);
     });
 
-    // Populate Heap Visualizer if we have pending requests
-    const heapItems = pendingRequests.map(r => ({
-        zone_name: r.zone_name,
-        resource_type: r.resource_type,
-        priority_score: r.priority
-    }));
+    const heapItems = pendingRequests
+        .filter(r => r.is_active !== 0 && r.is_active !== false)
+        .map(r => ({
+            zone_name: r.zone_name,
+            resource_type: r.resource_type,
+            priority_score: r.priority
+        }));
     
-    // Sort array into heap-ordered layout (Max Heap simulation)
-    // We can run Heapify structure:
     buildMaxHeap(heapItems);
     renderHeap(heapItems);
 }
 
-// Tab 4: Render Fleet list
 function renderFleet() {
     const container = document.getElementById('fleet-list');
+    if (!container) return;
     container.innerHTML = '';
 
     appData.vehicles.forEach(vehicle => {
@@ -243,12 +241,11 @@ function renderFleet() {
         let statusClass = 'available';
         if (vehicle.status === 'Dispatched') statusClass = 'dispatched';
         
-        // Find if vehicle is assigned in current simulation
         let assignmentText = '<div class="fleet-assignment-box idle">Idle</div>';
         if (simulationResults && simulationResults.proposed && simulationResults.proposed.dispatches) {
             const assignment = simulationResults.proposed.dispatches.find(d => d.vehicle_id === vehicle.vehicle_id);
             if (assignment && assignment.assigned_zone !== 'Idle') {
-                assignmentText = `<div class="fleet-assignment-box">Dispatched to <b>${assignment.assigned_zone}</b></div>`;
+                assignmentText = `<div class="fleet-assignment-box">Dispatched from <b>${assignment.optimal_depot || 'Depot'}</b> to <b>${assignment.assigned_zone}</b></div>`;
                 statusClass = 'dispatched';
             }
         }
@@ -281,9 +278,11 @@ function renderFleet() {
 
 function populateRequestForms() {
     const select = document.getElementById('req-zone');
+    if (!select) return;
     select.innerHTML = '<option value="" disabled selected>Select affected zone</option>';
     
-    appData.zones.forEach(zone => {
+    // Only show active zones that are not depots
+    appData.zones.filter(z => z.is_active && !z.is_depot).forEach(zone => {
         const opt = document.createElement('option');
         opt.value = zone.id;
         opt.innerText = `${zone.name} (${zone.severity})`;
@@ -291,11 +290,88 @@ function populateRequestForms() {
     });
 }
 
+function renderZoneToggles() {
+    const container = document.getElementById('zone-toggles-list');
+    if (!container) return;
+    container.innerHTML = '';
+
+    const zones = appData.zones.filter(z => !z.is_depot);
+    zones.forEach(zone => {
+        const row = document.createElement('div');
+        row.style.display = 'flex';
+        row.style.justifyContent = 'space-between';
+        row.style.alignItems = 'center';
+        row.style.marginBottom = '6px';
+        row.style.fontSize = '11px';
+
+        const nameSpan = document.createElement('span');
+        nameSpan.innerText = zone.name.split(' (')[0];
+        nameSpan.style.color = zone.is_active ? 'var(--text-primary)' : 'var(--text-muted)';
+        if (!zone.is_active) nameSpan.style.textDecoration = 'line-through';
+
+        const toggleBtn = document.createElement('button');
+        toggleBtn.innerText = zone.is_active ? 'Active' : 'Offline';
+        toggleBtn.style.padding = '2px 6px';
+        toggleBtn.style.fontSize = '9px';
+        toggleBtn.style.borderRadius = '4px';
+        toggleBtn.style.border = 'none';
+        toggleBtn.style.cursor = 'pointer';
+        toggleBtn.style.fontWeight = 'bold';
+        toggleBtn.style.width = '55px';
+        toggleBtn.style.textAlign = 'center';
+        toggleBtn.style.color = '#0b0f19';
+        toggleBtn.style.background = zone.is_active ? '#00e676' : '#64748b';
+
+        toggleBtn.addEventListener('click', () => {
+            window.setZoneActiveStatus(zone.id, !zone.is_active);
+        });
+
+        row.appendChild(nameSpan);
+        row.appendChild(toggleBtn);
+        container.appendChild(row);
+    });
+}
+
+window.setZoneActiveStatus = function(zoneId, isActive) {
+    fetch('/api/zone/toggle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ zone_id: zoneId, is_active: isActive })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.status === 'success') {
+            let count = parseInt(document.getElementById('metric-recalculations').innerText) || 0;
+            document.getElementById('metric-recalculations').innerText = count + 1;
+            loadDashboardData();
+        }
+    });
+};
+
+function updateLiveMetrics() {
+    // 1. Active Zones
+    const activeZones = appData.zones.filter(z => z.is_active && !z.is_depot).length;
+    document.getElementById('metric-active-zones').innerText = activeZones;
+    document.getElementById('stat-total-zones').innerText = activeZones;
+
+    // 2. Total Requests
+    document.getElementById('metric-total-requests').innerText = appData.requests.length;
+
+    // 3. Delivered Resource Units
+    const delivered = appData.requests
+        .filter(r => r.status === 'Allocated' || r.status === 'Partial')
+        .reduce((sum, r) => sum + r.quantity, 0);
+    document.getElementById('metric-delivered-qty').innerText = delivered;
+
+    // 4. Hazard Roads
+    const hazardRoads = appData.roads.filter(r => r.risk_level !== 'Normal').length;
+    document.getElementById('metric-blocked-roads').innerText = hazardRoads;
+}
+
 // ==========================================================================
 // 4. Binary Heap Tree Drawer
 // ==========================================================================
 function buildMaxHeap(arr) {
-    // Standard heapify logic to simulate binary heap array order
     const len = arr.length;
     for (let i = Math.floor(len / 2) - 1; i >= 0; i--) {
         maxHeapify(arr, len, i);
@@ -324,6 +400,7 @@ function maxHeapify(arr, n, i) {
 
 function renderHeap(heapArray) {
     const visualizer = document.getElementById('heap-tree-visual');
+    if (!visualizer) return;
     visualizer.innerHTML = '';
 
     if (!heapArray || heapArray.length === 0) {
@@ -339,10 +416,9 @@ function renderHeap(heapArray) {
     const container = document.createElement('div');
     container.className = 'heap-node-container';
 
-    // Break heap down into levels: 0 (root), 1 (index 1-2), 2 (index 3-6), 3 (index 7-14)
     const totalLevels = Math.ceil(Math.log2(heapArray.length + 1));
 
-    for (let l = 0; l < Math.min(totalLevels, 4); l++) { // Cap rendering at 4 levels for UX UI readability
+    for (let l = 0; l < Math.min(totalLevels, 4); l++) {
         const levelDiv = document.createElement('div');
         levelDiv.className = 'heap-level';
         levelDiv.style.justifyContent = 'space-around';
@@ -369,17 +445,21 @@ function renderHeap(heapArray) {
 }
 
 // ==========================================================================
-// 5. Action Handlers (Form, Allocation, Simulation)
+// 5. Action Handlers (Form, Toggles, Simulation, Failures)
 // ==========================================================================
 function setupEventListeners() {
-    // Reset DB Action
+    // Reset Database
     document.getElementById('btn-reset-db').addEventListener('click', () => {
-        if (confirm("Are you sure you want to reset the database back to default inventory and clean queues?")) {
+        if (confirm("Reset database to standard inventory and clean queues?")) {
             fetch('/api/reset', { method: 'POST' })
                 .then(res => res.json())
                 .then(data => {
                     if (data.status === 'success') {
                         simulationResults = null;
+                        document.getElementById('metric-recalculations').innerText = '0';
+                        document.getElementById('metric-heap-ops').innerText = '0';
+                        document.getElementById('metric-dijkstra-runs').innerText = '0';
+                        document.getElementById('metric-bb-nodes').innerText = '0';
                         loadDashboardData();
                         alert("Database reset successfully.");
                     }
@@ -387,7 +467,7 @@ function setupEventListeners() {
         }
     });
 
-    // Custom Request Submission
+    // Custom Request Form Submission
     document.getElementById('request-form').addEventListener('submit', (e) => {
         e.preventDefault();
         const zoneId = document.getElementById('req-zone').value;
@@ -404,14 +484,14 @@ function setupEventListeners() {
             if (data.status === 'success') {
                 document.getElementById('request-form').reset();
                 loadDashboardData();
-                alert(`Emergency Request registered successfully! priority score: ${data.priority_score}`);
+                alert(`Request added. priority score: ${data.priority_score}`);
             } else {
                 alert("Error registering request: " + data.message);
             }
         });
     });
 
-    // Live Resource Allocation execution
+    // Greedy Allocation Rerun
     document.getElementById('btn-run-allocation').addEventListener('click', () => {
         fetch('/api/allocate', { method: 'POST' })
             .then(res => res.json())
@@ -435,7 +515,7 @@ function setupEventListeners() {
     document.getElementById('btn-run-sim').addEventListener('click', () => {
         const scenario = document.getElementById('scenario-select').value;
         if (!scenario) {
-            alert("Please select a live crisis scenario first!");
+            alert("Select a crisis scenario first.");
             return;
         }
 
@@ -452,23 +532,11 @@ function setupEventListeners() {
 
                 if (data.status === 'success') {
                     simulationResults = data.results;
-                    
-                    // Render Metrics Comparison
                     renderSimulationMetrics(data.results);
-                    
-                    // Render Knapsack results
                     renderKnapsackOverview(data.results.proposed.dispatches);
-                    
-                    // Render Branch & Bound assignment logs
                     renderBranchBoundLog(data.results.proposed.dispatches);
-
-                    // Switch to Simulation Analytics Tab
                     document.querySelector('[data-tab="tab-simulation"]').click();
-                    
-                    // Load and highlight the first valid path on the map
                     loadMapSimulationPaths(data.results.proposed.dispatches);
-                    
-                    // Reload base database levels
                     loadDashboardData();
                 } else {
                     alert("Simulation run failed: " + data.message);
@@ -480,6 +548,161 @@ function setupEventListeners() {
                 alert("Simulation error: " + err);
             });
     });
+
+    // UPGRADE 2: Large Scale Disaster Generation
+    document.getElementById('btn-add-zones').addEventListener('click', () => {
+        const btn = document.getElementById('btn-add-zones');
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Scaling...';
+        btn.disabled = true;
+
+        fetch('/api/simulate/large', { method: 'POST' })
+            .then(res => res.json())
+            .then(data => {
+                btn.innerHTML = '<i class="fa-solid fa-circle-plus"></i> +10 Zones';
+                btn.disabled = false;
+
+                if (data.status === 'success') {
+                    simulationResults = data.results;
+                    renderSimulationMetrics(data.results);
+                    renderKnapsackOverview(data.results.proposed.dispatches);
+                    renderBranchBoundLog(data.results.proposed.dispatches);
+                    loadDashboardData();
+                    alert(data.message + " Scaling simulation ran successfully.");
+                } else {
+                    alert("Failed to scale zones: " + data.message);
+                }
+            });
+    });
+
+    // UPGRADE 4: Supply Shortage
+    document.getElementById('btn-shortage').addEventListener('click', () => {
+        fetch('/api/simulate/shortage', { method: 'POST' })
+            .then(res => res.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    loadDashboardData();
+                    alert("Resource shortage activated. Warehouse stock reduced to 10%. Allocation recalculations completed.");
+                }
+            });
+    });
+
+    // UPGRADE 6: Disaster Spread BFS
+    document.getElementById('btn-spread').addEventListener('click', () => {
+        fetch('/api/simulate/spread', { method: 'POST' })
+            .then(res => res.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    loadDashboardData();
+                    if (data.spread_zones.length > 0) {
+                        let msg = `Disaster propagated to adjacent zones via BFS:\n\n`;
+                        data.spread_zones.forEach(z => {
+                            msg += `- ${z.name}: Upgraded to ${z.severity} severity.\n`;
+                        });
+                        alert(msg);
+                    } else {
+                        alert("Disaster spread completed. No new neighboring zones affected.");
+                    }
+                } else {
+                    alert("Spread error: " + data.message);
+                }
+            });
+    });
+
+    // UPGRADE 7: Route Failure Detour
+    document.getElementById('btn-route-failure').addEventListener('click', () => {
+        fetch('/api/simulate/route_failure', { method: 'POST' })
+            .then(res => res.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    loadDashboardData();
+                    
+                    // Direct map comparison draw
+                    document.querySelector('[data-tab="tab-map"]').click();
+                    setTimeout(() => {
+                        window.drawRouteComparison(
+                            ['Depot A (Central)', 'Zone A (Glendale)', 'Zone B (Pasadena)'],
+                            ['Depot A (Central)', 'Zone C (East LA)', 'Zone B (Pasadena)']
+                        );
+                        
+                        const detailsContainer = document.getElementById('route-inspector-details');
+                        detailsContainer.innerHTML = `
+                            <div style="font-family:'Outfit'; font-size:15px; font-weight:700; margin-bottom:8px; color:var(--primary);">
+                                Route Failure Detour (Depot A &rarr; Pasadena)
+                            </div>
+                            <div style="font-size:11px; color:#ff1744; margin-bottom:8px; font-weight:600;">
+                                <i class="fa-solid fa-triangle-exclamation"></i> Road Collapse Mid-Transit!
+                            </div>
+                            <div style="font-size:11px; margin-bottom:12px; color:var(--text-secondary); line-height: 1.4;">
+                                <b>Original Path (Red):</b> Depot A &rarr; Glendale &rarr; Pasadena (19.7 km)<br>
+                                <b>Detour Path (Green):</b> Depot A &rarr; East LA &rarr; Pasadena (22.7 km)
+                            </div>
+                            <div class="inspector-path" style="margin-top:6px;">
+                                <span class="inspector-node" style="border-color:#ff1744; background:rgba(255,23,68,0.1); color:#ff1744;">Depot A</span>
+                                <span class="inspector-node" style="border-color:#ff1744; background:rgba(255,23,68,0.1); color:#ff1744;">Glendale</span>
+                                <span class="inspector-node" style="border-color:#00e676; background:rgba(0,230,118,0.1); color:#00e676;">East LA</span>
+                                <span class="inspector-node" style="border-color:#00e676; background:rgba(0,230,118,0.1); color:#00e676;">Pasadena</span>
+                            </div>
+                        `;
+                    }, 300);
+                    
+                    alert("Transit road collapse simulated! Glendale <-> Pasadena blocked. Detour calculated on map.");
+                }
+            });
+    });
+
+    // Manual Recalculation
+    document.getElementById('btn-recalculate').addEventListener('click', () => {
+        let count = parseInt(document.getElementById('metric-recalculations').innerText) || 0;
+        document.getElementById('metric-recalculations').innerText = count + 1;
+        loadDashboardData();
+        alert("Forced route and allocation recalculations complete.");
+    });
+
+    // Random Zone Deactivation
+    document.getElementById('btn-random-deactivate').addEventListener('click', () => {
+        fetch('/api/zone/toggle', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ random: true })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.status === 'success') {
+                alert(data.message);
+                let count = parseInt(document.getElementById('metric-recalculations').innerText) || 0;
+                document.getElementById('metric-recalculations').innerText = count + 1;
+                loadDashboardData();
+            } else {
+                alert(data.message);
+            }
+        });
+    });
+
+    // Legend Preset buttons
+    ['damaged', 'flooded', 'enemy', 'blocked'].forEach(cat => {
+        const btn = document.getElementById(`toggle-${cat}-preset`);
+        if (btn) {
+            btn.addEventListener('click', () => {
+                const catMap = {
+                    'damaged': 'Damaged',
+                    'flooded': 'Flooded',
+                    'enemy': 'Enemy-Controlled',
+                    'blocked': 'Blocked'
+                };
+                fetch('/api/road/hazard', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ category: catMap[cat] })
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        loadDashboardData();
+                    }
+                });
+            });
+        }
+    });
 }
 
 // ==========================================================================
@@ -490,29 +713,56 @@ function renderSimulationMetrics(results) {
         Active Scenario: <b style="color:var(--primary); font-family:var(--font-heading);">${results.scenario}</b> - ${results.description}
     `;
 
-    // Traditional Stats
+    // Update Ribbon stats from simulation execution data
+    if (results.stats) {
+        document.getElementById('metric-heap-ops').innerText = results.stats.heap_ops;
+        document.getElementById('metric-dijkstra-runs').innerText = results.stats.dijkstra_ops;
+        document.getElementById('metric-bb-nodes').innerText = results.stats.bb_nodes;
+        document.getElementById('metric-avg-response').innerText = `${results.proposed.avg_response_time_min} m`;
+    }
+
     const trad = results.traditional;
     document.getElementById('m-trad-time').innerText = trad.avg_response_time_min > 0 ? `${trad.avg_response_time_min} m` : '-';
     document.getElementById('m-trad-dist').innerText = `${trad.total_distance_km} km`;
     document.getElementById('m-trad-util').innerText = `${trad.resource_utilization_pct}%`;
     document.getElementById('m-trad-success').innerText = `${trad.success_rate_pct}%`;
 
-    // Proposed Stats
     const prop = results.proposed;
     document.getElementById('m-prop-time').innerText = prop.avg_response_time_min > 0 ? `${prop.avg_response_time_min} m` : '-';
     document.getElementById('m-prop-dist').innerText = `${prop.total_distance_km} km`;
     document.getElementById('m-prop-util').innerText = `${prop.resource_utilization_pct}%`;
     document.getElementById('m-prop-success').innerText = `${prop.success_rate_pct}%`;
 
-    // Update global stat displays on main tab
     document.getElementById('stat-avg-resp-time').innerText = `${prop.avg_response_time_min} min`;
 
-    // Update charts.js charts
+    // Dynamic advantage statements in Algorithm breakdown table
+    const timeAdv = trad.avg_response_time_min - prop.avg_response_time_min;
+    if (timeAdv > 0) {
+        document.getElementById('adv-priority').innerText = `Critical dispatches processed ${timeAdv.toFixed(1)} mins faster`;
+        document.getElementById('adv-priority').style.color = '#00e676';
+    }
+    const distSaved = trad.total_distance_km - prop.total_distance_km;
+    if (distSaved > 0) {
+        document.getElementById('adv-dispatch').innerText = `Fleet delivery costs minimized by saving ${distSaved.toFixed(1)} km`;
+        document.getElementById('adv-dispatch').style.color = '#00e676';
+    }
+    const utilAdv = prop.resource_utilization_pct - trad.resource_utilization_pct;
+    if (utilAdv > 0) {
+        document.getElementById('adv-cargo').innerText = `Cargo utility density increased by +${utilAdv.toFixed(1)}%`;
+        document.getElementById('adv-cargo').style.color = '#00e676';
+    }
+    const successAdv = prop.success_rate_pct - trad.success_rate_pct;
+    if (successAdv > 0) {
+        document.getElementById('adv-routing').innerText = `Safe path success rate increased by +${successAdv.toFixed(1)}%`;
+        document.getElementById('adv-routing').style.color = '#00e676';
+    }
+
     updateCharts(trad, prop);
 }
 
 function renderKnapsackOverview(dispatches) {
     const container = document.getElementById('cargo-knapsack-overview');
+    if (!container) return;
     container.innerHTML = '';
 
     const validDispatches = dispatches.filter(d => d.assigned_zone !== 'Idle');
@@ -539,7 +789,6 @@ function renderKnapsackOverview(dispatches) {
         let loadedWeight = 0;
         let loadedValue = 0;
 
-        // Calculate total loaded value first to determine percentage contribution
         let totalValForPct = 0;
         Object.entries(d.loaded_resources).forEach(([name, qty]) => {
             const res = appData.resources.find(r => r.resource_name === name);
@@ -584,7 +833,6 @@ function renderKnapsackOverview(dispatches) {
 
         const shortZoneName = d.assigned_zone.split(' (')[0];
 
-        // Compute original demands by summing loaded and left behind items
         let demandsHtml = '';
         const originalRequests = {};
         Object.entries(d.loaded_resources).forEach(([name, qty]) => {
@@ -599,7 +847,7 @@ function renderKnapsackOverview(dispatches) {
 
         itemBox.innerHTML = `
             <div style="font-weight:700; margin-bottom:10px; font-size:12px; color:var(--primary);">
-                ${d.vehicle_name} &rarr; ${shortZoneName}
+                ${d.vehicle_name} &rarr; ${shortZoneName} (${d.optimal_depot || 'Hub'})
             </div>
             <div style="font-size:11px; margin-bottom:10px; color:var(--text-secondary); line-height: 1.4;">
                 Route Distance: <b>${d.distance_km.toFixed(1)} km</b> | Travel Time: <b>${d.travel_time_min.toFixed(1)} mins</b>
@@ -634,6 +882,7 @@ function renderKnapsackOverview(dispatches) {
 
 function renderBranchBoundLog(dispatches) {
     const container = document.getElementById('bb-decision-logic');
+    if (!container) return;
     container.innerHTML = '';
 
     const validDispatches = dispatches.filter(d => d.assigned_zone !== 'Idle');
@@ -659,7 +908,7 @@ function renderBranchBoundLog(dispatches) {
     validDispatches.forEach(d => {
         logHtml += `
             <li>
-                Assigned <b>${d.vehicle_name}</b> to <b>${d.assigned_zone}</b>:<br>
+                Assigned <b>${d.vehicle_name}</b> to <b>${d.assigned_zone}</b> (starting from <b>${d.optimal_depot || 'Hub'}</b>):<br>
                 Travel Cost: $${d.travel_cost} | Risk Penalty: $${d.risk_penalty} | Left-behind Utility Penalty: $${d.capacity_penalty}
             </li>
         `;
@@ -676,15 +925,13 @@ function renderBranchBoundLog(dispatches) {
     container.appendChild(logBox);
 }
 
-// Map interactions & routing links
 function loadMapSimulationPaths(dispatches) {
-    const mapTab = document.querySelector('[data-tab="tab-map"]');
-    // Save dispatch list to window so that click functions inside map marker popups can invoke Dijkstra paths
     window.activeDispatches = dispatches;
 }
 
 window.inspectDijkstraRoute = function(zoneName) {
     const detailsContainer = document.getElementById('route-inspector-details');
+    if (!detailsContainer) return;
     detailsContainer.innerHTML = `
         <div class="empty-state-small">
             <i class="fa-solid fa-spinner fa-spin"></i>
@@ -692,17 +939,14 @@ window.inspectDijkstraRoute = function(zoneName) {
         </div>
     `;
 
-    // Find if there is an active dispatch for this zone in current simulation results
     let dispatch = null;
     if (window.activeDispatches) {
         dispatch = window.activeDispatches.find(d => d.assigned_zone === zoneName);
     }
 
     if (dispatch) {
-        // If active dispatch exists, render immediately
         renderRouteDetails(dispatch, zoneName);
     } else {
-        // No active dispatch (e.g., Anaheim in a flood scenario). Fetch ad-hoc route from backend.
         const scenario = document.getElementById('scenario-select').value || '';
         
         fetch(`/api/route_to?destination=${encodeURIComponent(zoneName)}&scenario=${scenario}`)
@@ -722,12 +966,11 @@ window.inspectDijkstraRoute = function(zoneName) {
                         risksHtml += `<span class="badge" style="background-color:${color}22; color:${color}; margin-right:4px;">${r}</span>`;
                     });
 
-                    // Estimate time using default average speed (65 km/h)
                     const estTime = roundVal((data.distance_km / 65) * 60);
 
                     detailsContainer.innerHTML = `
                         <div style="font-family:'Outfit'; font-size:15px; font-weight:700; margin-bottom:8px; color:var(--primary);">
-                            Depot &rarr; ${zoneName}
+                            ${data.optimal_depot || 'Hub'} &rarr; ${zoneName}
                         </div>
                         <div style="font-size:11px; color:var(--warning); margin-bottom:12px; font-weight:600;">
                             <i class="fa-solid fa-triangle-exclamation"></i> Ad-Hoc Route (No Active Dispatch)
@@ -736,6 +979,7 @@ window.inspectDijkstraRoute = function(zoneName) {
                             ${data.path.map(n => `<span class="inspector-node">${n.split(' (')[0]}</span>`).join('')}
                         </div>
                         <div style="margin-top:12px;">
+                            <div class="path-data-row"><span>Source Depot:</span> <span>${data.optimal_depot || 'Hub'}</span></div>
                             <div class="path-data-row"><span>Distance:</span> <span>${data.distance_km} km</span></div>
                             <div class="path-data-row"><span>Est. Travel Time:</span> <span>${estTime} mins (Avg Speed)</span></div>
                             <div class="path-data-row"><span>Route Status Risks:</span> <span>${risksHtml || 'Clear'}</span></div>
@@ -778,7 +1022,7 @@ function renderRouteDetails(dispatch, zoneName) {
     const detailsContainer = document.getElementById('route-inspector-details');
     detailsContainer.innerHTML = `
         <div style="font-family:'Outfit'; font-size:15px; font-weight:700; margin-bottom:8px; color:var(--primary);">
-            Depot &rarr; ${zoneName}
+            ${dispatch.optimal_depot || 'Hub'} &rarr; ${zoneName}
         </div>
         <div style="font-size:12px; color:var(--text-secondary); margin-bottom:12px;">
             Assigned Vehicle: <b>${dispatch.vehicle_name}</b> (${dispatch.vehicle_type})
@@ -787,6 +1031,7 @@ function renderRouteDetails(dispatch, zoneName) {
             ${dispatch.path.map(n => `<span class="inspector-node">${n.split(' (')[0]}</span>`).join('')}
         </div>
         <div style="margin-top:12px;">
+            <div class="path-data-row"><span>Source Depot:</span> <span>${dispatch.optimal_depot || 'Hub'}</span></div>
             <div class="path-data-row"><span>Distance:</span> <span>${dispatch.distance_km} km</span></div>
             <div class="path-data-row"><span>Est. Travel Time:</span> <span>${dispatch.travel_time_min} mins</span></div>
             <div class="path-data-row"><span>Route Status Risks:</span> <span>${risksHtml || 'Clear'}</span></div>
@@ -794,7 +1039,10 @@ function renderRouteDetails(dispatch, zoneName) {
     `;
 }
 
-// Error popups
 function showErrorNotification(msg) {
     console.error(msg);
+}
+
+function roundVal(val) {
+    return Math.round(val * 100) / 100;
 }

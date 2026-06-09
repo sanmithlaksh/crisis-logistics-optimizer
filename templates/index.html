@@ -96,6 +96,85 @@
                     </button>
                 </div>
             </header>
+
+            <!-- Advanced Live Metrics Ribbon -->
+            <div class="metrics-ribbon glass-card">
+                <div class="metric-ribbon-item">
+                    <i class="fa-solid fa-earth-americas text-primary"></i>
+                    <div class="metric-ribbon-text">
+                        <span id="metric-active-zones">6</span>
+                        <label>Active Zones</label>
+                    </div>
+                </div>
+                <div class="metric-ribbon-item">
+                    <i class="fa-solid fa-list-check text-warning"></i>
+                    <div class="metric-ribbon-text">
+                        <span id="metric-total-requests">0</span>
+                        <label>Total Requests</label>
+                    </div>
+                </div>
+                <div class="metric-ribbon-item">
+                    <i class="fa-solid fa-hand-holding-hand text-success"></i>
+                    <div class="metric-ribbon-text">
+                        <span id="metric-delivered-qty">0</span>
+                        <label>Delivered Units</label>
+                    </div>
+                </div>
+                <div class="metric-ribbon-item">
+                    <i class="fa-solid fa-hourglass-half text-info"></i>
+                    <div class="metric-ribbon-text">
+                        <span id="metric-avg-response">-</span>
+                        <label>Avg Response</label>
+                    </div>
+                </div>
+                <div class="metric-ribbon-item">
+                    <i class="fa-solid fa-road-barrier text-danger"></i>
+                    <div class="metric-ribbon-text">
+                        <span id="metric-blocked-roads">0</span>
+                        <label>Hazard Roads</label>
+                    </div>
+                </div>
+                <div class="metric-ribbon-item font-code">
+                    <i class="fa-solid fa-arrows-spin text-purple"></i>
+                    <div class="metric-ribbon-text">
+                        <span id="metric-recalculations">0</span>
+                        <label>Reroutes</label>
+                    </div>
+                </div>
+                <div class="metric-ribbon-item font-code">
+                    <i class="fa-solid fa-network-wired text-warning"></i>
+                    <div class="metric-ribbon-text">
+                        <span id="metric-heap-ops">0</span>
+                        <label>Heap Ops</label>
+                    </div>
+                </div>
+                <div class="metric-ribbon-item font-code">
+                    <i class="fa-solid fa-route text-success"></i>
+                    <div class="metric-ribbon-text">
+                        <span id="metric-dijkstra-runs">0</span>
+                        <label>Dijkstra runs</label>
+                    </div>
+                </div>
+                <div class="metric-ribbon-item font-code">
+                    <i class="fa-solid fa-code-fork text-primary"></i>
+                    <div class="metric-ribbon-text">
+                        <span id="metric-bb-nodes">0</span>
+                        <label>B&B Decisions</label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Simulation Adaptive Control Center -->
+            <div class="sim-control-deck glass-card">
+                <span class="deck-label"><i class="fa-solid fa-sliders"></i> Adaptive Controls:</span>
+                <div class="deck-actions">
+                    <button id="btn-add-zones" class="btn-outline-primary btn-sm"><i class="fa-solid fa-circle-plus"></i> +10 Zones</button>
+                    <button id="btn-shortage" class="btn-outline-warning btn-sm"><i class="fa-solid fa-circle-minus"></i> Resource Shortage</button>
+                    <button id="btn-spread" class="btn-outline-danger btn-sm"><i class="fa-solid fa-circle-nodes"></i> Spread Disaster</button>
+                    <button id="btn-route-failure" class="btn-outline-danger btn-sm"><i class="fa-solid fa-road-circle-exclamation"></i> Transit Collapse</button>
+                    <button id="btn-recalculate" class="btn-outline-success btn-sm"><i class="fa-solid fa-arrows-rotate"></i> Recalculate Routes</button>
+                </div>
+            </div>
             
             <!-- Tab Pages Container -->
             <div class="tab-pages-container">
@@ -256,17 +335,42 @@
                                 </div>
                                 <div class="card-body">
                                     <div class="hazard-legend">
-                                        <p class="legend-title">Hazard Avoidance Settings</p>
-                                        <div class="legend-item"><span class="legend-color normal"></span> <span>Normal Road (Multiplier: 1.0)</span></div>
-                                        <div class="legend-item"><span class="legend-color damaged"></span> <span>Damaged Road (Multiplier: 2.0)</span></div>
-                                        <div class="legend-item"><span class="legend-color flooded"></span> <span>Flooded Road (Multiplier: 3.0)</span></div>
-                                        <div class="legend-item"><span class="legend-color danger"></span> <span>Conflict / Enemy Zone (Multiplier: 8.0)</span></div>
-                                        <div class="legend-item"><span class="legend-color blocked"></span> <span>Blocked Road (Multiplier: 9999.0)</span></div>
+                                        <p class="legend-title">Hazard Avoidance Toggles</p>
+                                        <div class="legend-item" style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 6px;">
+                                            <div><span class="legend-color normal"></span> <span>Normal Road (1.0x)</span></div>
+                                        </div>
+                                        <div class="legend-item" style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 6px;">
+                                            <div><span class="legend-color damaged"></span> <span>Damaged Road (2.0x)</span></div>
+                                            <button id="toggle-damaged-preset" class="btn-toggle-hazard">Simulate</button>
+                                        </div>
+                                        <div class="legend-item" style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 6px;">
+                                            <div><span class="legend-color flooded"></span> <span>Flooded Road (3.0x)</span></div>
+                                            <button id="toggle-flooded-preset" class="btn-toggle-hazard">Simulate</button>
+                                        </div>
+                                        <div class="legend-item" style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 6px;">
+                                            <div><span class="legend-color danger"></span> <span>Conflict Sector (8.0x)</span></div>
+                                            <button id="toggle-enemy-preset" class="btn-toggle-hazard">Simulate</button>
+                                        </div>
+                                        <div class="legend-item" style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 6px;">
+                                            <div><span class="legend-color blocked"></span> <span>Blocked Road (9999.0x)</span></div>
+                                            <button id="toggle-blocked-preset" class="btn-toggle-hazard">Simulate</button>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
                             
-                            <div class="card glass-card flex-grow">
+                            <!-- Dynamic Crisis Zone Active Toggles -->
+                            <div class="card glass-card" style="margin-top: 12px; max-height: 200px; display: flex; flex-direction: column;">
+                                <div class="card-header" style="padding: 8px 12px; background: rgba(15, 23, 42, 0.4); border-bottom: 1px solid var(--border-glass);">
+                                    <h3 style="font-size: 12px;">Zone Availability</h3>
+                                    <button id="btn-random-deactivate" class="btn-outline-danger btn-xs" style="font-size: 9px; padding: 2px 4px;">Random Deactivate</button>
+                                </div>
+                                <div class="card-body" id="zone-toggles-list" style="overflow-y: auto; padding: 8px 12px;">
+                                    <!-- Populated dynamically via JS -->
+                                </div>
+                            </div>
+
+                            <div class="card glass-card flex-grow" style="margin-top: 12px;">
                                 <div class="card-header">
                                     <h3>Dijkstra Path Inspector</h3>
                                 </div>
@@ -398,6 +502,52 @@
                                 <canvas id="chart-comparison-radar"></canvas>
                             </div>
                         </div>
+
+                        <!-- Algorithmic Direct Comparison Breakdown -->
+                        <div class="card glass-card span-all-cols" style="margin-top: 16px;">
+                            <div class="card-header">
+                                <h3>DAA Optimization vs Baseline Algorithm Breakdown</h3>
+                            </div>
+                            <div class="card-body table-container">
+                                <table class="custom-table" style="font-size:12px;">
+                                    <thead>
+                                        <tr>
+                                            <th>Component / Problem</th>
+                                            <th>DAA Optimization Engine</th>
+                                            <th>Traditional Baseline Method</th>
+                                            <th>Performance Advantage</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td><b>Priority Queue</b></td>
+                                            <td>Max-Heap Order (Severity * 10 + Pop / 10000)</td>
+                                            <td>FCFS Queue (Sequential, unprioritized)</td>
+                                            <td class="text-success" id="adv-priority">High-priority dispatches processed first</td>
+                                        </tr>
+                                        <tr>
+                                            <td><b>Routing & Hazards</b></td>
+                                            <td>Dijkstra (Risk-Weighted Detour Multipliers)</td>
+                                            <td>BFS Hop count (ignores flooded & blocked roads)</td>
+                                            <td class="text-success" id="adv-routing">Safe path success rate increased by routing around hazards</td>
+                                        </tr>
+                                        <tr>
+                                            <td><b>Cargo Packing</b></td>
+                                            <td>0/1 Knapsack (Dynamic Programming maximizing utility)</td>
+                                            <td>FCFS sequential cargo packing (first-fit)</td>
+                                            <td class="text-success" id="adv-cargo">Resource utility density maximized within capacity bounds</td>
+                                        </tr>
+                                        <tr>
+                                            <td><b>Fleet Allocation</b></td>
+                                            <td>Branch & Bound (Minimizes travel cost + penalties)</td>
+                                            <td>Manual matching (sequential vehicle-to-zone)</td>
+                                            <td class="text-success" id="adv-dispatch">Fleet delivery costs minimized and idle states optimized</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
                     </div>
                 </div>
                 
