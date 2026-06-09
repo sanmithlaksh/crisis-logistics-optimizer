@@ -9,6 +9,9 @@
 #define MAX_VEHICLES 3
 #define INF 99999
 
+#define MAX_ITEMS 15
+#define MAX_CAPACITY 1000
+
 /* --- 1. DATA STRUCTURE DEFINITIONS --- */
 
 typedef struct {
@@ -106,6 +109,21 @@ Request heap_pop(MaxHeap *heap) {
     return root;
 }
 
+/* --- Helper: Print Total Requests Done by Each Zone --- */
+void print_total_requests_by_zone(Request requests[], int req_count) {
+    printf("--- SUMMARIZING DEMAND: Total Requests Done by Zone ---\n");
+    int zone_totals[MAX_ZONES] = {0};
+    
+    for (int i = 0; i < req_count; i++) {
+        zone_totals[requests[i].zone_idx] += requests[i].quantity;
+    }
+    
+    for (int i = 1; i < MAX_ZONES; i++) {
+        printf("  %s: Total requested units = %d\n", ZONE_NAMES[i], zone_totals[i]);
+    }
+    printf("\n");
+}
+
 /* --- 3. GREEDY RESOURCE ALLOCATION --- */
 
 void allocate_resources(MaxHeap *heap, Resource *inventory, int inv_size) {
@@ -134,15 +152,15 @@ void allocate_resources(MaxHeap *heap, Resource *inventory, int inv_size) {
             if (available >= requested) {
                 allocated = requested;
                 inventory[res_idx].available_qty -= requested;
-                printf("Allocated fully: %d units of %s to %s (Status: Allocated)\n", 
+                printf("  Allocated fully: %d units of %s to %s (Status: Allocated)\n", 
                        allocated, req.resource_type, req.zone_name);
             } else if (available > 0) {
                 allocated = available;
                 inventory[res_idx].available_qty = 0;
-                printf("Allocated partially: %d/%d units of %s to %s (Status: Partial)\n", 
+                printf("  Allocated partially: %d/%d units of %s to %s (Status: Partial)\n", 
                        allocated, requested, req.resource_type, req.zone_name);
             } else {
-                printf("Unfulfilled: 0/%d units of %s to %s (Status: Unfulfilled - Stock Depleted)\n", 
+                printf("  Unfulfilled: 0/%d units of %s to %s (Status: Unfulfilled - Stock Depleted)\n", 
                        requested, req.resource_type, req.zone_name);
             }
         }
@@ -222,10 +240,13 @@ void dijkstra(double graph[MAX_ZONES][MAX_ZONES], double risk_graph[MAX_ZONES][M
 /* --- 5. 0/1 KNAPSACK DYNAMIC PROGRAMMING --- */
 
 void knapsack_optimize(int hold_capacity_scaled, int weights_scaled[], int values[], int items_count, 
-                       int selected_counts[], int *total_value, int *total_weight_scaled) {
-    /* 2D DP Table */
-    int dp[items_count + 1][hold_capacity_scaled + 1];
+                       int selected_counts[], int *total_value, int *total_weight_scaled, const char* item_names[]) {
+    static int dp[MAX_ITEMS + 1][MAX_CAPACITY + 1];
     
+    if (items_count > MAX_ITEMS) items_count = MAX_ITEMS;
+    if (hold_capacity_scaled > MAX_CAPACITY) hold_capacity_scaled = MAX_CAPACITY;
+    
+    /* Dynamic programming grid population */
     for (int i = 0; i <= items_count; i++) {
         for (int w = 0; w <= hold_capacity_scaled; w++) {
             if (i == 0 || w == 0) {
@@ -242,16 +263,47 @@ void knapsack_optimize(int hold_capacity_scaled, int weights_scaled[], int value
     
     *total_value = dp[items_count][hold_capacity_scaled];
     
-    /* Backtrack to identify selected items */
+    /* Backtrack to identify selected items and output the maximization calculation details */
     int w = hold_capacity_scaled;
     *total_weight_scaled = 0;
+    
+    printf("\n--- Step-by-Step Backtracking & Maximization Calculations ---\n");
+    printf("Capacity = %.1f kg (Scaled: %d)\n", hold_capacity_scaled / 10.0, hold_capacity_scaled);
+    
     for (int i = items_count; i > 0; i--) {
-        if (dp[i][w] != dp[i - 1][w]) {
-            selected_counts[i - 1] = 1;
-            *total_weight_scaled += weights_scaled[i - 1];
-            w -= weights_scaled[i - 1];
+        int item_wt = weights_scaled[i - 1];
+        int item_val = values[i - 1];
+        
+        if (w >= item_wt) {
+            int val_if_taken = item_val + dp[i - 1][w - item_wt];
+            int val_if_skipped = dp[i - 1][w];
+            
+            /* The core maximization decision check */
+            if (dp[i][w] == val_if_taken && dp[i][w] != dp[i - 1][w]) {
+                selected_counts[i - 1] = 1;
+                *total_weight_scaled += item_wt;
+                printf("  [Item %2d] %-15s (Weight: %3.1f kg, Value: %3d) -> SELECTED\n", 
+                       i, item_names[i - 1], item_wt / 10.0, item_val);
+                printf("    * Decision Reason: Value if taken (%d) > Value if skipped (%d).\n", 
+                       val_if_taken, val_if_skipped);
+                printf("    * Calculation: dp[%d][%d] = max(dp[%d][%d], %d + dp[%d][%d]) = %d\n", 
+                       i, w, i - 1, w, item_val, i - 1, w - item_wt, dp[i][w]);
+                printf("    * Capacity decreases: %.1f kg -> %.1f kg\n", w / 10.0, (w - item_wt) / 10.0);
+                w -= item_wt;
+            } else {
+                selected_counts[i - 1] = 0;
+                printf("  [Item %2d] %-15s (Weight: %3.1f kg, Value: %3d) -> SKIPPED\n", 
+                       i, item_names[i - 1], item_wt / 10.0, item_val);
+                printf("    * Decision Reason: Value if skipped (%d) >= Value if taken (%d).\n", 
+                       val_if_skipped, val_if_taken);
+                printf("    * Calculation: dp[%d][%d] = max(dp[%d][%d], %d + dp[%d][%d]) = %d\n", 
+                       i, w, i - 1, w, item_val, i - 1, w - item_wt, dp[i][w]);
+            }
         } else {
             selected_counts[i - 1] = 0;
+            printf("  [Item %2d] %-15s (Weight: %3.1f kg, Value: %3d) -> SKIPPED\n", 
+                   i, item_names[i - 1], item_wt / 10.0, item_val);
+            printf("    * Decision Reason: Item weight exceeds remaining capacity of %.1f kg.\n", w / 10.0);
         }
     }
 }
@@ -262,7 +314,7 @@ double best_bb_cost = INF;
 int best_bb_assignment[MAX_VEHICLES]; /* maps vehicle index to zone index */
 
 void solve_bb_recursion(int vehicle_idx, int current_assignment[], double current_cost, 
-                        bool assigned_zones[], double cost_matrix[MAX_VEHICLES][MAX_ZONES]) {
+                         bool assigned_zones[], double cost_matrix[MAX_VEHICLES][MAX_ZONES]) {
     /* Base Case */
     if (vehicle_idx == MAX_VEHICLES) {
         if (current_cost < best_bb_cost) {
@@ -292,49 +344,49 @@ void solve_bb_recursion(int vehicle_idx, int current_assignment[], double curren
             }
         }
     }
-    
-    /* Branch 2: Keep vehicle idle */
-    current_assignment[vehicle_idx] = -1;
-    solve_bb_recursion(vehicle_idx + 1, current_assignment, current_cost, 
-                       assigned_zones, cost_matrix);
 }
 
 /* --- 7. MAIN RUN EXECUTION --- */
 
 int main() {
     printf("=========================================================\n");
-    printf("  CRISIS LOGISTICS LOGIC - DAA ALGORITHMIC DEMONSTRATION \n");
+    printf("  CRISIS LOGISTICS OPTIMIZER - DAA ALGORITHM SUITE DEMO  \n");
     printf("=========================================================\n\n");
     
     /* --- DATA INITIALIZATION --- */
     
     /* Initialize requests */
-    Request r1 = {101, "Zone A (Glendale)", 1, "Water Crate", 120, 3, 12000, 0.0};
-    Request r2 = {102, "Zone E (Santa Monica)", 5, "Medicine", 50, 0, 10000, 0.0};
-    Request r3 = {103, "Zone D (Torrance)", 4, "Fuel Ltrs", 80, 2, 15000, 0.0};
-    Request r4 = {104, "Zone B (Pasadena)", 2, "Rescue Gear", 10, 1, 18000, 0.0};
+    int num_requests = 6;
+    Request requests[6] = {
+        {101, "Zone A (Glendale)", 1, "Water Crate", 120, 3, 12000, 0.0},
+        {102, "Zone E (Santa Monica)", 5, "Medicine", 50, 0, 10000, 0.0},
+        {103, "Zone D (Torrance)", 4, "Fuel Ltrs", 80, 2, 15000, 0.0},
+        {104, "Zone B (Pasadena)", 2, "Rescue Gear", 10, 1, 18000, 0.0},
+        {105, "Zone A (Glendale)", 1, "Medicine", 30, 3, 12000, 0.0},
+        {106, "Zone D (Torrance)", 4, "Water Crate", 50, 2, 15000, 0.0}
+    };
     
-    /* Calculate priority scores */
-    r1.priority_score = calculate_priority(r1.severity_weight, r1.population);
-    r2.priority_score = calculate_priority(r2.severity_weight, r2.population);
-    r3.priority_score = calculate_priority(r3.severity_weight, r3.population);
-    r4.priority_score = calculate_priority(r4.severity_weight, r4.population);
+    /* Calculate priority scores for all requests */
+    for (int i = 0; i < num_requests; i++) {
+        requests[i].priority_score = calculate_priority(requests[i].severity_weight, requests[i].population);
+    }
+    
+    /* Print the total requests done by each zone */
+    print_total_requests_by_zone(requests, num_requests);
     
     /* --- DEMO 1: MAX-HEAP SORTING --- */
     printf("--- DEMO 1: Max-Heap Priority Ranking ---\n");
     MaxHeap heap;
     heap.size = 0;
     
-    heap_push(&heap, r1);
-    heap_push(&heap, r2);
-    heap_push(&heap, r3);
-    heap_push(&heap, r4);
+    for (int i = 0; i < num_requests; i++) {
+        heap_push(&heap, requests[i]);
+    }
     
     printf("Requests pushed into Max-Heap. Popping in prioritized order:\n");
-    for (int i = 0; i < 4; i++) {
-        /* Heap pop extracts root (highest score) */
+    for (int i = 0; i < num_requests; i++) {
         Request popped = heap_pop(&heap);
-        printf("  Rank %d: %s | Item: %s | Score: %.2f (Severity Wt: %d, Pop: %d)\n", 
+        printf("  Rank %d: %-22s | Item: %-12s | Score: %5.2f (Severity Wt: %d, Pop: %d)\n", 
                i + 1, popped.zone_name, popped.resource_type, popped.priority_score, 
                popped.severity_weight, popped.population);
     }
@@ -342,17 +394,16 @@ int main() {
     
     /* Rebuild heap for Allocation Demo */
     heap.size = 0;
-    heap_push(&heap, r1);
-    heap_push(&heap, r2);
-    heap_push(&heap, r3);
-    heap_push(&heap, r4);
+    for (int i = 0; i < num_requests; i++) {
+        heap_push(&heap, requests[i]);
+    }
     
     /* Warehouse Stocks */
     Resource inventory[MAX_RESOURCES] = {
-        {"Water Crate", 100, 5.0, 50}, /* Stock: 100 (Request: 120 -> Glendale gets 100 (Partial)) */
-        {"Medicine", 500, 2.0, 100},   /* Stock: 500 (Request: 50 -> Santa Monica gets 50 (Full)) */
-        {"Fuel Ltrs", 60, 3.0, 70},    /* Stock: 60 (Request: 80 -> Torrance gets 60 (Partial)) */
-        {"Rescue Gear", 5, 15.0, 90}   /* Stock: 5 (Request: 10 -> Pasadena gets 5 (Partial)) */
+        {"Water Crate", 150, 5.0, 50}, /* Stock: 150 (Req: 120 + 50 -> Glendale gets 120, Torrance gets 30 (Partial)) */
+        {"Medicine", 500, 2.0, 100},   /* Stock: 500 (Req: 50 + 30 -> both fully fulfilled) */
+        {"Fuel Ltrs", 60, 3.0, 70},    /* Stock: 60 (Req: 80 -> Torrance gets 60 (Partial)) */
+        {"Rescue Gear", 5, 15.0, 90}   /* Stock: 5 (Req: 10 -> Pasadena gets 5 (Partial)) */
     };
     
     /* Run Greedy Allocation */
@@ -371,7 +422,7 @@ int main() {
         {0.0, 0.0, 0.0, 0.0, 28.5, 0.0}   /* Zone E (5) */
     };
     
-    /* Road risk status settings (Multipliers: Normal = 1.0, Blocked = 9999.0) */
+    /* Road risk status settings */
     double risk_graph[MAX_ZONES][MAX_ZONES];
     for (int i = 0; i < MAX_ZONES; i++) {
         for (int j = 0; j < MAX_ZONES; j++) {
@@ -383,7 +434,12 @@ int main() {
     risk_graph[1][2] = get_hazard_multiplier("Blocked");
     risk_graph[2][1] = get_hazard_multiplier("Blocked");
     
-    printf("Simulating Blocked Path Glendale <-> Pasadena. Finding safest path to Pasadena:\n");
+    /* Flood path Depot (0) <-> East LA (3) */
+    risk_graph[0][3] = get_hazard_multiplier("Flooded");
+    risk_graph[3][0] = get_hazard_multiplier("Flooded");
+    
+    printf("Simulating: Glendale <-> Pasadena is BLOCKED; Depot <-> East LA is FLOODED.\n");
+    printf("Finding safest path from Depot to Pasadena:\n");
     
     int path[MAX_ZONES];
     int path_len = 0;
@@ -397,41 +453,73 @@ int main() {
         printf("%s", ZONE_NAMES[path[i]]);
         if (i < path_len - 1) printf(" -> ");
     }
-    printf("\n  Physical Distance: %.2f km | Dijkstra Effective Risk Cost: %.2f\n\n", distance, eff_wt);
+    printf("\n  Physical Distance: %.2f km | Dijkstra Effective Risk-Weighted Cost: %.2f\n\n", distance, eff_wt);
     
-    /* --- DEMO 4: 0/1 KNAPSACK OVERVIEW --- */
-    printf("--- DEMO 4: 0/1 Knapsack Cargo hold optimizations ---\n");
-    /* Truck Alpha capacity: 100 kg. Glendale requests various items:
-       Item 0: Medicine (Qty: 2, unit wt: 2.0kg -> scaled: 20, value: 100)
-       Item 1: Food (Qty: 10, unit wt: 1.0kg -> scaled: 10, value: 40)
-       Item 2: Water (Qty: 5, unit wt: 5.0kg -> scaled: 50, value: 50)
-       Item 3: Fuel (Qty: 4, unit wt: 3.0kg -> scaled: 30, value: 70)
-       Item 4: Rescue Gear (Qty: 2, unit wt: 15.0kg -> scaled: 150, value: 90)
-    */
-    int hold_capacity_scaled = 100 * 10; /* 100 kg capacity * 10 = 1000 scaled */
-    int item_weights_scaled[5] = {20, 10, 50, 30, 150};
-    int item_values[5] = {100, 40, 50, 70, 90};
-    const char* item_names[5] = {"Medicine", "Food Packet", "Water Crate", "Fuel Ltrs", "Rescue Gear"};
+    /* --- DEMO 4: 0/1 KNAPSACK WITH 12 ITEMS --- */
+    printf("--- DEMO 4: 0/1 Knapsack Cargo Hold Optimization (12 Items) ---\n");
     
-    int selected_counts[5] = {0};
-    int max_value = 0;
+    /* 12 items cargo options database */
+    const char* item_names[12] = {
+        "Medicine A", "Food Pack A", "Water Pack A", "Fuel Ltrs A",
+        "Rescue Gear A", "Medicine B", "Food Pack B", "Water Pack B",
+        "Fuel Ltrs B", "Blankets", "First Aid Kit", "Flashlights"
+    };
+    /* Weights in kg (multiplied by 10 to make integers for DP array indexes) */
+    int item_weights_scaled[12] = {
+        20,   /* Medicine A: 2.0 kg */
+        15,   /* Food Pack A: 1.5 kg */
+        50,   /* Water Pack A: 5.0 kg */
+        30,   /* Fuel Ltrs A: 3.0 kg */
+        120,  /* Rescue Gear A: 12.0 kg */
+        10,   /* Medicine B: 1.0 kg */
+        20,   /* Food Pack B: 2.0 kg */
+        40,   /* Water Pack B: 4.0 kg */
+        25,   /* Fuel Ltrs B: 2.5 kg */
+        35,   /* Blankets: 3.5 kg */
+        8,    /* First Aid Kit: 0.8 kg */
+        5     /* Flashlights: 0.5 kg */
+    };
+    int item_values[12] = {
+        100,  /* Medicine A */
+        45,   /* Food Pack A */
+        60,   /* Water Pack A */
+        80,   /* Fuel Ltrs A */
+        150,  /* Rescue Gear A */
+        50,   /* Medicine B */
+        50,   /* Food Pack B */
+        40,   /* Water Pack B */
+        65,   /* Fuel Ltrs B */
+        35,   /* Blankets */
+        40,   /* First Aid Kit */
+        25    /* Flashlights */
+    };
+    
+    /* Vehicle Capacity: 15.0 kg -> 150 scaled weight */
+    int hold_capacity_scaled = 150; 
+    
+    int selected_counts[12] = {0};
+    int total_value = 0;
     int total_weight_scaled = 0;
     
-    knapsack_optimize(hold_capacity_scaled, item_weights_scaled, item_values, 5, 
-                      selected_counts, &max_value, &total_weight_scaled);
+    knapsack_optimize(hold_capacity_scaled, item_weights_scaled, item_values, 12, 
+                      selected_counts, &total_value, &total_weight_scaled, item_names);
     
-    printf("Optimizing 100 kg vehicle hold. DP Selection:\n");
-    for (int i = 0; i < 5; i++) {
+    printf("\n--- Summary of Items Packed in Hold (Target: Maximize Value) ---\n");
+    int count_selected = 0;
+    for (int i = 0; i < 12; i++) {
         if (selected_counts[i] == 1) {
-            printf("  Loaded: %s | Weight: %.1f kg | Value: %d pts\n", 
-                   item_names[i], item_weights_scaled[i] / 10.0, item_values[i]);
-        } else {
-            printf("  Left Behind: %s | Weight: %.1f kg | Value: %d pts\n", 
-                   item_names[i], item_weights_scaled[i] / 10.0, item_values[i]);
+            count_selected++;
+            double percentage_contrib = (item_values[i] / (double)total_value) * 100.0;
+            printf("  Loaded: %-15s | Weight: %3.1f kg | Value: %3d | Value Contribution: %5.1f%%\n", 
+                   item_names[i], item_weights_scaled[i] / 10.0, item_values[i], percentage_contrib);
         }
     }
-    printf("  Hold Packed: %.1f / 100.0 kg | Total Utility: %d points\n\n", 
-           total_weight_scaled / 10.0, max_value);
+    
+    printf("\n  Summary statistics:\n");
+    printf("    * Total Selected Items: %d out of 12 items\n", count_selected);
+    printf("    * Capacity Fulfilling Rate: %.1f%% (%.1f / 15.0 kg)\n", 
+           (total_weight_scaled / (double)hold_capacity_scaled) * 100.0, total_weight_scaled / 10.0);
+    printf("    * Total Cargo Utility Value: %d points\n\n", total_value);
     
     /* --- DEMO 5: BRANCH AND BOUND DECISION MATRIX --- */
     printf("--- DEMO 5: Branch and Bound Vehicle Assignment ---\n");
@@ -445,6 +533,9 @@ int main() {
     
     int current_assignment[MAX_VEHICLES] = {-1, -1, -1};
     bool assigned_zones[MAX_ZONES] = {false};
+    
+    best_bb_cost = INF;
+    for (int i = 0; i < MAX_VEHICLES; i++) best_bb_assignment[i] = -1;
     
     solve_bb_recursion(0, current_assignment, 0.0, assigned_zones, cost_matrix);
     
