@@ -584,12 +584,29 @@ function renderKnapsackOverview(dispatches) {
 
         const shortZoneName = d.assigned_zone.split(' (')[0];
 
+        // Compute original demands by summing loaded and left behind items
+        let demandsHtml = '';
+        const originalRequests = {};
+        Object.entries(d.loaded_resources).forEach(([name, qty]) => {
+            originalRequests[name] = (originalRequests[name] || 0) + qty;
+        });
+        Object.entries(d.left_behind_resources).forEach(([name, qty]) => {
+            originalRequests[name] = (originalRequests[name] || 0) + qty;
+        });
+        Object.entries(originalRequests).forEach(([name, qty]) => {
+            demandsHtml += `<span class="badge" style="background: rgba(255, 255, 255, 0.05); color: var(--text-secondary); margin-right: 4px; margin-bottom: 4px; display: inline-block; padding: 4px 6px;">${name}: ${qty}</span>`;
+        });
+
         itemBox.innerHTML = `
             <div style="font-weight:700; margin-bottom:10px; font-size:12px; color:var(--primary);">
                 ${d.vehicle_name} &rarr; ${shortZoneName}
             </div>
             <div style="font-size:11px; margin-bottom:10px; color:var(--text-secondary); line-height: 1.4;">
                 Route Distance: <b>${d.distance_km.toFixed(1)} km</b> | Travel Time: <b>${d.travel_time_min.toFixed(1)} mins</b>
+            </div>
+            <div style="margin-bottom: 12px; padding: 8px; background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-glass); border-radius: 6px;">
+                <div style="font-size: 10px; font-weight: 600; margin-bottom: 6px; text-transform: uppercase; color: var(--text-primary);">Total Requested by Zone:</div>
+                <div style="display: flex; flex-wrap: wrap;">${demandsHtml}</div>
             </div>
             <div>
                 <p style="font-size:10px; font-weight:600; margin-bottom:4px; text-transform:uppercase;">Cargo Load (${loadedWeight.toFixed(1)} / ${maxCapacity} kg):</p>
