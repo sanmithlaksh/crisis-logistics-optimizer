@@ -1,6 +1,7 @@
 import os
 import random
 import sys
+import math
 from flask import Flask, jsonify, request, render_template
 import database
 from simulation import SimulationEngine
@@ -131,6 +132,58 @@ def run_live_allocation():
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
+def check_isolation_cause(deactivated_zone_name, zones, roads):
+    # Find all active depots (using is_depot flag or matching 'Depot' in name as a fallback)
+    depots = [z['name'] for z in zones if (z.get('is_depot') or 'Depot' in z['name']) and z.get('is_active')]
+    if not depots:
+        return None
+        
+    # Active zones (excluding depots and the one we want to deactivate)
+    active_targets = [z['name'] for z in zones if z.get('is_active') and not (z.get('is_depot') or 'Depot' in z['name']) and z['name'] != deactivated_zone_name]
+    
+    def get_reachable(ignored_zone):
+        graph = {}
+        for r in roads:
+            src, dest = r['source'], r['destination']
+            if src == ignored_zone or dest == ignored_zone:
+                continue
+                
+            src_zone = next((z for z in zones if z['name'] == src), None)
+            dest_zone = next((z for z in zones if z['name'] == dest), None)
+            
+            src_active = src_zone.get('is_active') if src_zone else True
+            dest_active = dest_zone.get('is_active') if dest_zone else True
+            
+            if not src_active or not dest_active:
+                continue
+                
+            if src not in graph: graph[src] = []
+            if dest not in graph: graph[dest] = []
+            graph[src].append(dest)
+            graph[dest].append(src)
+            
+        visited = set(depots)
+        queue = list(depots)
+        while queue:
+            curr = queue.pop(0)
+            for neighbor in graph.get(curr, []):
+                if neighbor not in visited:
+                    n_zone = next((z for z in zones if z['name'] == neighbor), None)
+                    n_active = n_zone.get('is_active') if n_zone else True
+                    if n_active and neighbor != ignored_zone:
+                        visited.add(neighbor)
+                        queue.append(neighbor)
+        return visited
+
+    reached_before = get_reachable(None)
+    reached_after = get_reachable(deactivated_zone_name)
+    
+    for target in active_targets:
+        if target in reached_before and target not in reached_after:
+            return target
+            
+    return None
+
 @app.route('/api/zone/toggle', methods=['POST'])
 def toggle_zone():
     """Toggles active status of a zone, or randomly deactivates one."""
@@ -141,13 +194,24 @@ def toggle_zone():
         random_deactivate = data.get('random', False)
 
         zones = database.get_zones()
+        roads = database.get_roads()
 
         if random_deactivate:
             # Get list of active zones that are not depots
-            active_zones = [z for z in zones if z['is_active'] and not z['is_depot']]
+            active_zones = [z for z in zones if z['is_active'] and not (z.get('is_depot') or 'Depot' in z['name'])]
             if not active_zones:
                 return jsonify({'status': 'error', 'message': 'No active zones available to deactivate'}), 400
-            target_zone = random.choice(active_zones)
+                
+            # Filter candidates that do not isolate other active zones
+            candidates = []
+            for z in active_zones:
+                if not check_isolation_cause(z['name'], zones, roads):
+                    candidates.append(z)
+                    
+            if not candidates:
+                return jsonify({'status': 'error', 'message': 'Deactivating any remaining zone would isolate other active zones.'}), 400
+                
+            target_zone = random.choice(candidates)
             zone_id = target_zone['id']
             is_active = False
         else:
@@ -157,6 +221,17 @@ def toggle_zone():
 
         if not target_zone:
             return jsonify({'status': 'error', 'message': 'Zone not found'}), 404
+
+        # Check isolation before deactivating manually
+        if not is_active:
+            isolated_zone = check_isolation_cause(target_zone['name'], zones, roads)
+            if isolated_zone:
+                target_display = target_zone['name'].split(' (')[0] if '(' in target_zone['name'] else target_zone['name']
+                isolated_display = isolated_zone.split(' (')[0] if '(' in isolated_zone else isolated_zone
+                return jsonify({
+                    'status': 'error', 
+                    'message': f"Cannot deactivate '{target_display}' as it would isolate '{isolated_display}' from all active depots."
+                }), 400
 
         database.update_zone_active_status(zone_id, is_active)
         status_str = "Deactivated" if not is_active else "Activated"
@@ -385,16 +460,37 @@ def run_disaster_spread():
 
 @app.route('/api/simulate/route_failure', methods=['POST'])
 def run_route_failure():
-    """Simulates a road collapse mid-transit by blocking Glendale <-> Pasadena."""
+    """Simulates a road collapse mid-transit by blocking a chosen road."""
     try:
-        # Block road Glendale <-> Pasadena
-        database.update_road_hazard('Zone A (Glendale)', 'Zone B (Pasadena)', 'Blocked')
+        data = request.json or {}
+        source = data.get('source', 'Zone A (Glendale)')
+        destination = data.get('destination', 'Zone B (Pasadena)')
         
-        # Trigger route re-check
+        # Block road in database
+        database.update_road_hazard(source, destination, 'Blocked')
+        
+        # Calculate detour path
+        roads = database.get_roads()
+        zones = database.get_zones()
+        inactive_zones = {z['name'] for z in zones if not z['is_active']}
+        
+        original_path = [source, destination]
+        detour_path, distance, eff_wt, risks = DijkstraRouter.find_shortest_path(
+            roads, source, destination, inactive_zones=inactive_zones
+        )
+        
+        if distance == float('inf'):
+            distance = None
+            
         return jsonify({
             'status': 'success',
-            'message': "Road collapse simulated: 'Glendale <-> Pasadena' is now BLOCKED.",
-            'blocked_road': 'Zone A (Glendale) <-> Zone B (Pasadena)'
+            'message': f"Road collapse simulated: '{source} <-> {destination}' is now BLOCKED.",
+            'blocked_road': f"{source} <-> {destination}",
+            'source': source,
+            'destination': destination,
+            'original_path': original_path,
+            'detour_path': detour_path,
+            'distance_km': distance
         })
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
@@ -423,8 +519,8 @@ def reset_database():
             (16, 'Zone P (Pomona)', 34.0551, -117.7500, 25000, 'Medium', 1, 0),
             (17, 'Zone Q (Redondo Beach)', 33.8492, -118.3884, 11000, 'Low', 1, 0),
             (18, 'Zone R (Manhattan Beach)', 33.8847, -118.4109, 9000, 'Low', 1, 0),
-            (19, 'Zone S (Culver City)', 34.0211, -118.3965, 12000, 'Medium', 1, 0),
-            (20, 'Zone T (Carson)', 33.8317, -118.2817, 15000, 'High', 1, 0),
+            (19, 'Zone S (Culver City)', 33.9911, -118.4165, 12000, 'Medium', 1, 0),
+            (20, 'Zone T (Carson)', 33.8017, -118.2517, 15000, 'High', 1, 0),
             (21, 'Zone U (Gardena)', 33.8883, -118.3090, 13000, 'Medium', 1, 0),
             (22, 'Zone V (West Covina)', 34.0686, -117.9390, 22000, 'High', 1, 0),
             (23, 'Zone W (Norwalk)', 33.9081, -118.0817, 17000, 'Critical', 1, 0),
@@ -503,7 +599,7 @@ def get_route_to():
             
         zones = database.get_zones()
         inactive_zones = {z['name'] for z in zones if not z['is_active']}
-        depots = [z['name'] for z in zones if z['is_depot'] and z['is_active']]
+        depots = [z['name'] for z in zones if (z.get('is_depot') or 'Depot' in z['name']) and z['is_active']]
         if not depots:
             depots = ['Depot A (Central)']
 
@@ -511,6 +607,12 @@ def get_route_to():
             roads, depots, destination, inactive_zones=inactive_zones
         )
         
+        # Replace float('inf') with None for JSON serialization compatibility
+        if distance == float('inf'):
+            distance = None
+        if eff_wt == float('inf'):
+            eff_wt = None
+            
         return jsonify({
             'status': 'success',
             'path': path,
@@ -518,6 +620,126 @@ def get_route_to():
             'effective_weight': eff_wt,
             'risks': risks,
             'optimal_depot': optimal_depot
+        })
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/road/clear_all', methods=['POST'])
+def clear_all_hazards():
+    try:
+        roads = database.get_roads()
+        for r in roads:
+            database.update_road_hazard(r['source'], r['destination'], 'Normal')
+        return jsonify({'status': 'success', 'message': 'All roads reset to Normal (Green)'})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/simulate/large/undo', methods=['POST'])
+def undo_large_disaster():
+    try:
+        count = database.delete_dynamic_zones()
+        
+        # Load updated state and run simulation baseline
+        zones_upd = database.get_zones()
+        resources_upd = database.get_resources()
+        vehicles_upd = database.get_vehicles()
+        roads_upd = database.get_roads()
+        
+        results = None
+        if zones_upd:
+            results = SimulationEngine.run_simulation(
+                'Flood', zones_upd, resources_upd, vehicles_upd, roads_upd
+            )
+            
+        return jsonify({
+            'status': 'success',
+            'message': f'Successfully removed {count} dynamic zones, roads, and requests.',
+            'removed_count': count,
+            'results': results
+        })
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/accessibility_report', methods=['GET'])
+def get_accessibility_report():
+    try:
+        scenario = request.args.get('scenario')
+        zones = database.get_zones()
+        roads = database.get_roads()
+        
+        # Apply active scenario overrides if active
+        if scenario and scenario in SimulationEngine.SCENARIOS:
+            roads = SimulationEngine.get_modified_roads(roads, scenario)
+            
+        # Identify active depots and active target zones
+        inactive_zones = {z['name'] for z in zones if not z.get('is_active', True)}
+        depots = [z['name'] for z in zones if (z.get('is_depot') or 'Depot' in z['name']) and z['is_active']]
+        target_zones = [z for z in zones if not z.get('is_depot') and 'Depot' not in z['name'] and z['is_active']]
+        
+        report = []
+        
+        # Clean risk multipliers where all roads have weight 1.0 (no penalty)
+        clean_multipliers = {
+            'Normal': 1.0,
+            'Damaged': 1.0,
+            'Flooded': 1.0,
+            'Enemy-Controlled': 1.0,
+            'Blocked': 1.0
+        }
+        
+        for zone in target_zones:
+            dest_name = zone['name']
+            
+            # 1. Current State Route
+            curr_path, curr_dist, curr_eff, curr_risks, curr_depot = DijkstraRouter.find_shortest_path_multi_depot(
+                roads, depots, dest_name, inactive_zones=inactive_zones
+            )
+            
+            # 2. Clean (All Green) State Route
+            clean_path, clean_dist, clean_eff, clean_risks, clean_depot = DijkstraRouter.find_shortest_path_multi_depot(
+                database.get_roads(), depots, dest_name, risk_multipliers=clean_multipliers, inactive_zones=inactive_zones
+            )
+            
+            # Identify hazards along current path
+            hazards_on_path = []
+            if curr_path:
+                for i in range(len(curr_path) - 1):
+                    u, v = curr_path[i], curr_path[i+1]
+                    road_seg = next((r for r in roads if (r['source'] == u and r['destination'] == v) or 
+                                                         (r['source'] == v and r['destination'] == u)), None)
+                    if road_seg and road_seg['risk_level'] != 'Normal':
+                        hazards_on_path.append({
+                            'segment': f"{u.split(' (')[0]} ↔ {v.split(' (')[0]}",
+                            'risk_level': road_seg['risk_level']
+                        })
+            
+            is_accessible = len(curr_path) > 0 and curr_eff < 9999.0
+            
+            # Replaces float('inf') values
+            if curr_dist == float('inf'): curr_dist = None
+            if curr_eff == float('inf'): curr_eff = None
+            if clean_dist == float('inf'): clean_dist = None
+            
+            cost_penalty = None
+            if is_accessible and clean_dist is not None:
+                cost_penalty = round(curr_eff - clean_dist, 2)
+            
+            report.append({
+                'zone_name': dest_name,
+                'is_accessible': is_accessible,
+                'closest_depot': curr_depot if is_accessible else (clean_depot if clean_path else None),
+                'current_path': curr_path,
+                'current_cost': curr_eff if is_accessible else None,
+                'current_distance': curr_dist if is_accessible else None,
+                'clean_path': clean_path,
+                'clean_cost': clean_dist if clean_path else None,
+                'cost_penalty': cost_penalty,
+                'hazards_on_path': hazards_on_path
+            })
+            
+        return jsonify({
+            'status': 'success',
+            'report': report
         })
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500

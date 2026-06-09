@@ -95,7 +95,7 @@ class SimulationEngine:
 
     @classmethod
     def get_modified_roads(cls, base_roads, scenario_name):
-        """Returns the list of roads modified for a specific scenario."""
+        """Returns the list of roads modified for a specific scenario, preserving the more severe risk levels."""
         scenario = cls.SCENARIOS.get(scenario_name)
         if not scenario:
             return base_roads
@@ -106,10 +106,19 @@ class SimulationEngine:
             rd = dict(road)
             pair1 = (rd['source'], rd['destination'])
             pair2 = (rd['destination'], rd['source'])
+            
+            db_risk = rd.get('risk_level', 'Normal')
+            scenario_risk = None
             if pair1 in mods:
-                rd['risk_level'] = mods[pair1]
+                scenario_risk = mods[pair1]
             elif pair2 in mods:
-                rd['risk_level'] = mods[pair2]
+                scenario_risk = mods[pair2]
+                
+            if scenario_risk:
+                db_mult = DijkstraRouter.DEFAULT_RISK_MULTIPLIERS.get(db_risk, 1.0)
+                sc_mult = DijkstraRouter.DEFAULT_RISK_MULTIPLIERS.get(scenario_risk, 1.0)
+                if sc_mult > db_mult:
+                    rd['risk_level'] = scenario_risk
             modified.append(rd)
         return modified
 

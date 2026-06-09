@@ -116,19 +116,25 @@ def get_zones():
         rows = [dict(row) for row in cursor.fetchall()]
         conn.close()
         for r in rows:
-            if 'is_active' not in r:
+            if 'is_active' not in r or r['is_active'] is None:
                 r['is_active'] = 1
-            if 'is_depot' not in r:
-                r['is_depot'] = 0
+            is_dep = r.get('is_depot')
+            if is_dep is None or is_dep == 0 or is_dep is False:
+                r['is_depot'] = 1 if 'Depot' in r['name'] else 0
+            else:
+                r['is_depot'] = 1 if is_dep else 0
         return rows
     else:
         response = supabase_client.table('zones').select('*').execute()
         data = response.data
         for r in data:
-            if 'is_active' not in r:
+            if 'is_active' not in r or r['is_active'] is None:
                 r['is_active'] = 1
-            if 'is_depot' not in r:
-                r['is_depot'] = 0
+            is_dep = r.get('is_depot')
+            if is_dep is None or is_dep == 0 or is_dep is False:
+                r['is_depot'] = 1 if 'Depot' in r['name'] else 0
+            else:
+                r['is_depot'] = 1 if is_dep else 0
         return data
 
 def get_resources():
@@ -155,16 +161,30 @@ def get_requests():
         rows = [dict(row) for row in cursor.fetchall()]
         conn.close()
         for r in rows:
-            if 'is_active' not in r:
+            if 'is_active' not in r or r['is_active'] is None:
                 r['is_active'] = 1
-            if 'is_depot' not in r:
-                r['is_depot'] = 0
+            is_dep = r.get('is_depot')
+            if is_dep is None or is_dep == 0 or is_dep is False:
+                r['is_depot'] = 1 if 'Depot' in r['zone_name'] else 0
+            else:
+                r['is_depot'] = 1 if is_dep else 0
         return rows
     else:
         response = supabase_client.table('requests').select('*, zones(*)').execute()
         flattened = []
         for req in response.data:
             zone = req.get('zones', {})
+            
+            is_active_val = zone.get('is_active', True) if zone else True
+            if is_active_val is None:
+                is_active_val = True
+                
+            is_dep_val = zone.get('is_depot', False) if zone else False
+            if is_dep_val is None or is_dep_val == 0 or is_dep_val is False:
+                is_dep_val = 'Depot' in (zone.get('name') or '') if zone else False
+            else:
+                is_dep_val = bool(is_dep_val)
+                
             flattened.append({
                 'request_id': req['request_id'],
                 'zone_id': req['zone_id'],
@@ -178,8 +198,8 @@ def get_requests():
                 'population': zone.get('population') if zone else 0,
                 'latitude': zone.get('latitude') if zone else 0.0,
                 'longitude': zone.get('longitude') if zone else 0.0,
-                'is_active': zone.get('is_active', True) if zone else True,
-                'is_depot': zone.get('is_depot', False) if zone else False
+                'is_active': is_active_val,
+                'is_depot': is_dep_val
             })
         return flattened
 
@@ -319,12 +339,28 @@ def insert_new_zones_bulk(new_zones, new_roads, new_requests):
         conn.close()
     else:
         try:
-            # Format zones for Supabase
-            zones_data = [{'id': z[0], 'name': z[1], 'latitude': z[2], 'longitude': z[3], 'population': z[4], 'severity': z[5], 'is_active': bool(z[6]), 'is_depot': bool(z[7])} for z in new_zones]
-            supabase_client.table('zones').insert(zones_data).execute()
+            # Format zones for Supabase (with column existence check fallback)
+            try:
+                zones_data = [{'id': z[0], 'name': z[1], 'latitude': z[2], 'longitude': z[3], 'population': z[4], 'severity': z[5], 'is_active': bool(z[6]), 'is_depot': bool(z[7])} for z in new_zones]
+                supabase_client.table('zones').insert(zones_data).execute()
+            except Exception as e:
+                print(f"Supabase zones insert failed (missing is_active/is_depot columns). Using old schema fallback: {e}", file=sys.stderr)
+                zones_data_fallback = [{'id': z[0], 'name': z[1], 'latitude': z[2], 'longitude': z[3], 'population': z[4], 'severity': z[5]} for z in new_zones]
+                supabase_client.table('zones').insert(zones_data_fallback).execute()
             
-            # Format roads
-            roads_data = [{'source': rd[0], 'destination': rd[1], 'distance_km': rd[2], 'risk_level': rd[3]} for rd in new_roads]
+            # Format roads with explicit sequential IDs to avoid conflicts with sequence keys
+            existing_roads = get_roads()
+            start_road_id = max((r.get('road_id') or r.get('id') or 0) for r in existing_roads) + 1 if existing_roads else 1
+            
+            roads_data = []
+            for idx, rd in enumerate(new_roads):
+                roads_data.append({
+                    'road_id': start_road_id + idx,
+                    'source': rd[0],
+                    'destination': rd[1],
+                    'distance_km': rd[2],
+                    'risk_level': rd[3]
+                })
             supabase_client.table('roads').insert(roads_data).execute()
             
             # Format requests
@@ -332,6 +368,59 @@ def insert_new_zones_bulk(new_zones, new_roads, new_requests):
             supabase_client.table('requests').insert(reqs_data).execute()
         except Exception as e:
             print(f"Failed to insert bulk simulation data to Supabase: {e}", file=sys.stderr)
+
+def delete_dynamic_zones():
+    """Deletes all dynamically generated zones, their requests, and their roads."""
+    if USING_SQLITE_FALLBACK:
+        conn = get_sqlite_conn()
+        cursor = conn.cursor()
+        
+        # Get dynamic zone IDs and names
+        cursor.execute("SELECT id, name FROM zones WHERE name LIKE '%(Dynamic)%'")
+        dynamic_zones = cursor.fetchall()
+        
+        if dynamic_zones:
+            zone_ids = [z[0] for z in dynamic_zones]
+            zone_names = [z[1] for z in dynamic_zones]
+            
+            # Delete requests
+            placeholders = ",".join("?" for _ in zone_ids)
+            cursor.execute(f"DELETE FROM requests WHERE zone_id IN ({placeholders})", zone_ids)
+            
+            # Delete roads where source or destination matches dynamic zone names
+            name_placeholders = ",".join("?" for _ in zone_names)
+            cursor.execute(f"DELETE FROM roads WHERE source IN ({name_placeholders}) OR destination IN ({name_placeholders})", zone_names * 2)
+            
+            # Delete zones
+            cursor.execute(f"DELETE FROM zones WHERE id IN ({placeholders})", zone_ids)
+            
+            conn.commit()
+        conn.close()
+        return len(dynamic_zones)
+    else:
+        try:
+            # Supabase
+            res = supabase_client.table('zones').select('id, name').ilike('name', '%(Dynamic)%').execute()
+            dynamic_zones = res.data or []
+            if dynamic_zones:
+                zone_ids = [z['id'] for z in dynamic_zones]
+                zone_names = [z['name'] for z in dynamic_zones]
+                
+                # Delete requests
+                supabase_client.table('requests').delete().in_('zone_id', zone_ids).execute()
+                
+                # Delete roads (source)
+                supabase_client.table('roads').delete().in_('source', zone_names).execute()
+                # Delete roads (destination)
+                supabase_client.table('roads').delete().in_('destination', zone_names).execute()
+                
+                # Delete zones
+                supabase_client.table('zones').delete().in_('id', zone_ids).execute()
+                
+            return len(dynamic_zones)
+        except Exception as e:
+            print(f"Failed to delete dynamic zones from Supabase: {e}", file=sys.stderr)
+            raise e
 
 def reset_database_state(zones_list, resources_list, vehicles_list, roads_list):
     """
@@ -425,8 +514,8 @@ def seed_default_if_empty():
             (16, 'Zone P (Pomona)', 34.0551, -117.7500, 25000, 'Medium', 1, 0),
             (17, 'Zone Q (Redondo Beach)', 33.8492, -118.3884, 11000, 'Low', 1, 0),
             (18, 'Zone R (Manhattan Beach)', 33.8847, -118.4109, 9000, 'Low', 1, 0),
-            (19, 'Zone S (Culver City)', 34.0211, -118.3965, 12000, 'Medium', 1, 0),
-            (20, 'Zone T (Carson)', 33.8317, -118.2817, 15000, 'High', 1, 0),
+            (19, 'Zone S (Culver City)', 33.9911, -118.4165, 12000, 'Medium', 1, 0),
+            (20, 'Zone T (Carson)', 33.8017, -118.2517, 15000, 'High', 1, 0),
             (21, 'Zone U (Gardena)', 33.8883, -118.3090, 13000, 'Medium', 1, 0),
             (22, 'Zone V (West Covina)', 34.0686, -117.9390, 22000, 'High', 1, 0),
             (23, 'Zone W (Norwalk)', 33.9081, -118.0817, 17000, 'Critical', 1, 0),

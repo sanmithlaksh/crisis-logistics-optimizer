@@ -2,6 +2,7 @@ let mapInstance = null;
 let markersGroup = null;
 let roadsGroup = null;
 let activeRouteLayer = null;
+let floodOverlaysGroup = null;
 
 const defaultDepotCoords = [34.0522, -118.2437]; // fallback
 
@@ -31,6 +32,7 @@ function initMap() {
 
     markersGroup = L.layerGroup().addTo(mapInstance);
     roadsGroup = L.layerGroup().addTo(mapInstance);
+    floodOverlaysGroup = L.layerGroup().addTo(mapInstance);
 }
 
 function updateMapData(zones, roads, activeRequests) {
@@ -48,15 +50,22 @@ function updateMapData(zones, roads, activeRequests) {
         coordMap[zone.name] = coords;
 
         // Custom styling for Depots vs Zones
-        if (zone.is_depot) {
+        if (zone.is_depot || zone.name.includes('Depot')) {
             const depotIcon = L.divIcon({
                 className: 'custom-depot-marker',
-                html: '<div style="background-color:#00f2fe; width:16px; height:16px; border-radius:50%; border:3px solid #fff; box-shadow:0 0 10px #00f2fe;"></div>',
+                html: '<div style="background-color:#2979ff; width:16px; height:16px; border-radius:50%; border:3px solid #fff; box-shadow:0 0 10px #2979ff;"></div>',
                 iconSize: [16, 16],
                 iconAnchor: [8, 8]
             });
             const marker = L.marker(coords, { icon: depotIcon }).addTo(markersGroup);
-            marker.bindPopup(`<b>${zone.name}</b><br><span style="color:#00f2fe; font-size:10px; font-weight:700;">SUPPLY HUB</span>`);
+            marker.bindPopup(`<b>${zone.name}</b><br><span style="color:#2979ff; font-size:10px; font-weight:700;">SUPPLY HUB</span>`);
+            
+            marker.bindTooltip(zone.name.split(' (')[0], {
+                permanent: true,
+                direction: 'top',
+                offset: [0, -10],
+                className: 'depot-label-tooltip'
+            });
             return;
         }
 
@@ -104,6 +113,13 @@ function updateMapData(zones, roads, activeRequests) {
         });
 
         const marker = L.marker(coords, { icon: zoneIcon }).addTo(markersGroup);
+        
+        marker.bindTooltip(zone.name.split(' (')[0], {
+            permanent: true,
+            direction: 'top',
+            offset: [0, -10],
+            className: 'zone-label-tooltip'
+        });
         
         const statusButton = isDeactivated 
             ? `<button onclick="setZoneActiveStatus(${zone.id}, true)" style="margin-top:8px; padding:4px 8px; font-size:10px; background:#00e676; border:none; border-radius:4px; font-weight:bold; color:#0b0f19; cursor:pointer; width:100%;">Reactivate Zone</button>`
@@ -180,7 +196,8 @@ function highlightRoute(pathNodes, roads) {
 
     // Fetch coordinates mapping
     const coordMap = {};
-    zones.forEach(zone => {
+    const zonesList = (typeof appData !== 'undefined' && appData.zones) ? appData.zones : [];
+    zonesList.forEach(zone => {
         coordMap[zone.name] = [zone.latitude, zone.longitude];
     });
 
@@ -259,7 +276,8 @@ function drawRouteComparison(oldPath, newPath) {
     activeRouteLayer = L.featureGroup().addTo(mapInstance);
     
     const coordMap = {};
-    zones.forEach(zone => {
+    const zonesList = (typeof appData !== 'undefined' && appData.zones) ? appData.zones : [];
+    zonesList.forEach(zone => {
         coordMap[zone.name] = [zone.latitude, zone.longitude];
     });
 
@@ -309,9 +327,90 @@ function drawRouteComparison(oldPath, newPath) {
     }
 }
 
-function clearActiveRoute() {
+window.clearActiveRoute = function() {
     if (activeRouteLayer && mapInstance) {
         mapInstance.removeLayer(activeRouteLayer);
         activeRouteLayer = null;
     }
-}
+};
+
+// --- Flood Scenario Map Overlay Theme ---
+const laRiverCoords = [
+    [34.1866, -118.6012],
+    [34.1622, -118.4900],
+    [34.1490, -118.4480],
+    [34.1420, -118.3900],
+    [34.1550, -118.3050],
+    [34.1200, -118.2700],
+    [34.0560, -118.2250],
+    [33.9950, -118.1880],
+    [33.9250, -118.1750],
+    [33.8800, -118.1980],
+    [33.7650, -118.2000]
+];
+
+const smCoastalPolygon = [
+    [34.0400, -118.5200],
+    [34.0000, -118.5000],
+    [33.9800, -118.4500],
+    [34.0150, -118.4900]
+];
+
+const lbCoastalPolygon = [
+    [33.7800, -118.2200],
+    [33.7400, -118.2000],
+    [33.7300, -118.1400],
+    [33.7600, -118.1100],
+    [33.7701, -118.1937]
+];
+
+window.toggleFloodMapTheme = function(isActive) {
+    if (!mapInstance) return;
+    if (!floodOverlaysGroup) {
+        floodOverlaysGroup = L.layerGroup().addTo(mapInstance);
+    }
+    
+    floodOverlaysGroup.clearLayers();
+    
+    if (isActive) {
+        // Draw Flooded LA River Corridor with glowing double polyline
+        L.polyline(laRiverCoords, {
+            color: '#00f2fe',
+            weight: 16,
+            opacity: 0.18,
+            lineCap: 'round',
+            lineJoin: 'round'
+        }).addTo(floodOverlaysGroup);
+        
+        const riverLine = L.polyline(laRiverCoords, {
+            color: '#00f2fe',
+            weight: 5,
+            opacity: 0.9,
+            lineCap: 'round',
+            lineJoin: 'round',
+            className: 'animated-water-path'
+        }).addTo(floodOverlaysGroup);
+        
+        riverLine.bindPopup("<b>Flooded Los Angeles River Basin</b><br><span style='color:#ff1744; font-weight:700;'>HIGH-FLOW DANGER:</span> Active river runoff.");
+        
+        // Draw Santa Monica Coastal surge polygon
+        const smFlood = L.polygon(smCoastalPolygon, {
+            color: '#2979ff',
+            fillColor: '#00f2fe',
+            fillOpacity: 0.18,
+            weight: 2,
+            dashArray: '5, 8'
+        }).addTo(floodOverlaysGroup);
+        smFlood.bindPopup("<b>Santa Monica Bay Surge Warning</b><br>Tidal inundation and beach run-up.");
+        
+        // Draw Long Beach Coastal surge polygon
+        const lbFlood = L.polygon(lbCoastalPolygon, {
+            color: '#2979ff',
+            fillColor: '#00f2fe',
+            fillOpacity: 0.18,
+            weight: 2,
+            dashArray: '5, 8'
+        }).addTo(floodOverlaysGroup);
+        lbFlood.bindPopup("<b>Long Beach Harbor Coastal Flood Warning</b><br>Sea wall overflow risk.");
+    }
+};

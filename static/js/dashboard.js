@@ -74,6 +74,7 @@ function setupTabNavigation() {
 // 2. Fetch data from backend API
 // ==========================================================================
 function loadDashboardData() {
+    window.activeDispatches = null; // Invalidate cached dispatches to force live route fetches on graph changes
     fetch('/api/data')
         .then(res => res.json())
         .then(data => {
@@ -84,7 +85,15 @@ function loadDashboardData() {
                 renderRequests();
                 renderFleet();
                 populateRequestForms();
+                populateCollapseRoadSelect(appData.roads);
                 updateLiveMetrics();
+                
+                // Show/hide undo zones button reactively based on presence of dynamic zones
+                const hasDynamic = appData.zones && appData.zones.some(z => z.name.includes('(Dynamic)'));
+                const btnUndo = document.getElementById('btn-undo-zones');
+                if (btnUndo) {
+                    btnUndo.style.display = hasDynamic ? 'inline-flex' : 'none';
+                }
                 
                 if (mapInstance && document.getElementById('tab-map').classList.contains('active')) {
                     updateMapData(appData.zones, appData.roads, appData.requests);
@@ -106,6 +115,21 @@ function updateDBModeLabel() {
         label.innerText = "Supabase Mode";
         label.style.color = "#00e676";
     }
+}
+
+function populateCollapseRoadSelect(roads) {
+    const select = document.getElementById('collapse-road-select');
+    if (!select) return;
+    const prevVal = select.value;
+    select.innerHTML = '<option value="">Collapse Specific Road...</option>';
+    roads.forEach(r => {
+        const option = document.createElement('option');
+        option.value = `${r.source}|${r.destination}`;
+        const hazardText = r.risk_level !== 'Normal' ? ` [${r.risk_level}]` : '';
+        option.innerText = `${r.source.split(' (')[0]} ↔ ${r.destination.split(' (')[0]}${hazardText}`;
+        select.appendChild(option);
+    });
+    if (prevVal) select.value = prevVal;
 }
 
 // ==========================================================================
@@ -344,6 +368,8 @@ window.setZoneActiveStatus = function(zoneId, isActive) {
             let count = parseInt(document.getElementById('metric-recalculations').innerText) || 0;
             document.getElementById('metric-recalculations').innerText = count + 1;
             loadDashboardData();
+        } else {
+            alert(data.message);
         }
     });
 };
@@ -460,6 +486,12 @@ function setupEventListeners() {
                         document.getElementById('metric-heap-ops').innerText = '0';
                         document.getElementById('metric-dijkstra-runs').innerText = '0';
                         document.getElementById('metric-bb-nodes').innerText = '0';
+                        
+                        // Reset scenario selector and flood map overlays
+                        const scenSel = document.getElementById('scenario-select');
+                        if (scenSel) scenSel.value = "";
+                        if (window.toggleFloodMapTheme) window.toggleFloodMapTheme(false);
+                        
                         loadDashboardData();
                         alert("Database reset successfully.");
                     }
@@ -608,46 +640,119 @@ function setupEventListeners() {
             });
     });
 
-    // UPGRADE 7: Route Failure Detour
-    document.getElementById('btn-route-failure').addEventListener('click', () => {
-        fetch('/api/simulate/route_failure', { method: 'POST' })
-            .then(res => res.json())
-            .then(data => {
-                if (data.status === 'success') {
-                    loadDashboardData();
-                    
-                    // Direct map comparison draw
-                    document.querySelector('[data-tab="tab-map"]').click();
-                    setTimeout(() => {
-                        window.drawRouteComparison(
-                            ['Depot A (Central)', 'Zone A (Glendale)', 'Zone B (Pasadena)'],
-                            ['Depot A (Central)', 'Zone C (East LA)', 'Zone B (Pasadena)']
-                        );
+    // UPGRADE 7: Dynamic Route Failure Detour
+    document.getElementById('collapse-road-select').addEventListener('change', (e) => {
+        const val = e.target.value;
+        if (!val) return;
+        
+        const [source, destination] = val.split('|');
+        
+        // Track the last collapsed road globally for the Undo button
+        window.lastCollapsedRoad = { source, destination };
+        
+        fetch('/api/simulate/route_failure', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ source, destination })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.status === 'success') {
+                loadDashboardData();
+                
+                // Show undo button
+                document.getElementById('btn-route-undo').style.display = 'inline-flex';
+                
+                // Direct map comparison draw
+                document.querySelector('[data-tab="tab-map"]').click();
+                
+                setTimeout(() => {
+                    const detailsContainer = document.getElementById('route-inspector-details');
+                    if (data.detour_path && data.detour_path.length > 0) {
+                        window.drawRouteComparison(data.original_path, data.detour_path);
                         
-                        const detailsContainer = document.getElementById('route-inspector-details');
                         detailsContainer.innerHTML = `
                             <div style="font-family:'Outfit'; font-size:15px; font-weight:700; margin-bottom:8px; color:var(--primary);">
-                                Route Failure Detour (Depot A &rarr; Pasadena)
+                                Route Failure Detour (${source.split(' (')[0]} &rarr; ${destination.split(' (')[0]})
                             </div>
                             <div style="font-size:11px; color:#ff1744; margin-bottom:8px; font-weight:600;">
                                 <i class="fa-solid fa-triangle-exclamation"></i> Road Collapse Mid-Transit!
                             </div>
                             <div style="font-size:11px; margin-bottom:12px; color:var(--text-secondary); line-height: 1.4;">
-                                <b>Original Path (Red):</b> Depot A &rarr; Glendale &rarr; Pasadena (19.7 km)<br>
-                                <b>Detour Path (Green):</b> Depot A &rarr; East LA &rarr; Pasadena (22.7 km)
+                                <b>Original Path (Red):</b> ${source.split(' (')[0]} &rarr; ${destination.split(' (')[0]} (${data.distance_km || '?'} km)<br>
+                                <b>Detour Path (Green):</b> ${data.detour_path.map(n => n.split(' (')[0]).join(' &rarr; ')}
                             </div>
                             <div class="inspector-path" style="margin-top:6px;">
-                                <span class="inspector-node" style="border-color:#ff1744; background:rgba(255,23,68,0.1); color:#ff1744;">Depot A</span>
-                                <span class="inspector-node" style="border-color:#ff1744; background:rgba(255,23,68,0.1); color:#ff1744;">Glendale</span>
-                                <span class="inspector-node" style="border-color:#00e676; background:rgba(0,230,118,0.1); color:#00e676;">East LA</span>
-                                <span class="inspector-node" style="border-color:#00e676; background:rgba(0,230,118,0.1); color:#00e676;">Pasadena</span>
+                                <span class="inspector-node" style="border-color:#ff1744; background:rgba(255,23,68,0.1); color:#ff1744;">${source.split(' (')[0]}</span>
+                                <span class="inspector-node" style="border-color:#ff1744; background:rgba(255,23,68,0.1); color:#ff1744;">${destination.split(' (')[0]}</span>
+                                <span style="font-size: 16px; margin: 0 4px; color: var(--text-secondary);">&rarr;</span>
+                                ${data.detour_path.map(n => `<span class="inspector-node" style="border-color:#00e676; background:rgba(0,230,118,0.1); color:#00e676;">${n.split(' (')[0]}</span>`).join('')}
                             </div>
                         `;
-                    }, 300);
-                    
-                    alert("Transit road collapse simulated! Glendale <-> Pasadena blocked. Detour calculated on map.");
+                    } else {
+                        window.drawRouteComparison(data.original_path, []);
+                        
+                        detailsContainer.innerHTML = `
+                            <div style="font-family:'Outfit'; font-size:15px; font-weight:700; margin-bottom:8px; color:var(--primary);">
+                                Route Failure Detour (${source.split(' (')[0]} &rarr; ${destination.split(' (')[0]})
+                            </div>
+                            <div style="font-size:11px; color:#ff1744; margin-bottom:8px; font-weight:600;">
+                                <i class="fa-solid fa-triangle-exclamation"></i> Road Collapse Mid-Transit!
+                            </div>
+                            <div style="font-size:11px; margin-bottom:12px; color:#ff1744; font-weight:600;">
+                                NO DETOUR PATH AVAILABLE! The endpoints are completely isolated.
+                            </div>
+                        `;
+                    }
+                }, 300);
+                
+                alert(`Transit road collapse simulated! '${source} <-> ${destination}' is now BLOCKED.`);
+            }
+        });
+    });
+
+    // Undo Transit Collapse
+    document.getElementById('btn-route-undo').addEventListener('click', () => {
+        const roadToUndo = window.lastCollapsedRoad || { source: 'Zone A (Glendale)', destination: 'Zone B (Pasadena)' };
+        
+        fetch('/api/road/hazard', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                source: roadToUndo.source,
+                destination: roadToUndo.destination,
+                risk_level: 'Normal'
+            })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.status === 'success') {
+                // Reset select dropdown
+                const select = document.getElementById('collapse-road-select');
+                if (select) select.value = "";
+                
+                loadDashboardData();
+                
+                // Clear map overlays
+                if (window.clearActiveRoute) window.clearActiveRoute();
+                
+                // Hide undo button
+                document.getElementById('btn-route-undo').style.display = 'none';
+                
+                // Reset inspector UI
+                const detailsContainer = document.getElementById('route-inspector-details');
+                if (detailsContainer) {
+                    detailsContainer.innerHTML = `
+                        <div class="empty-state-small">
+                            <i class="fa-solid fa-circle-info"></i>
+                            <p>Click on any affected zone marker on the map to run Dijkstra's algorithm and view the safest optimal path.</p>
+                        </div>
+                    `;
                 }
-            });
+                
+                alert(`Transit collapse undone: '${roadToUndo.source} <-> ${roadToUndo.destination}' reopened.`);
+            }
+        });
     });
 
     // Manual Recalculation
@@ -703,6 +808,250 @@ function setupEventListeners() {
             });
         }
     });
+
+    // Toggle Flood Theme when scenario dropdown changes
+    const scenSelect = document.getElementById('scenario-select');
+    if (scenSelect) {
+        scenSelect.addEventListener('change', (e) => {
+            const scenario = e.target.value;
+            if (window.toggleFloodMapTheme) {
+                window.toggleFloodMapTheme(scenario === 'Flood');
+            }
+        });
+    }
+
+    // Map Enlarge / Minimize Toggle
+    const btnEnlarge = document.getElementById('btn-map-enlarge');
+    if (btnEnlarge) {
+        btnEnlarge.addEventListener('click', () => {
+            const mapLayout = document.querySelector('.map-layout');
+            const mapSidebar = document.querySelector('.map-sidebar');
+            if (mapLayout) {
+                const isFullscreen = mapLayout.classList.toggle('fullscreen');
+                
+                // Reset collapse state on layout changes
+                if (mapSidebar) {
+                    mapSidebar.classList.remove('collapsed');
+                }
+                
+                if (isFullscreen) {
+                    btnEnlarge.innerHTML = '<i class="fa-solid fa-compress"></i>';
+                    btnEnlarge.title = "Restore Map Size";
+                } else {
+                    btnEnlarge.innerHTML = '<i class="fa-solid fa-expand"></i>';
+                    btnEnlarge.title = "Enlarge Map";
+                }
+                
+                // Let layout grid finish transition before invalidating leaflet viewport size
+                setTimeout(() => {
+                    if (mapInstance) {
+                        mapInstance.invalidateSize();
+                    }
+                }, 310);
+            }
+        });
+    }
+
+    // Collapse Sidebar Panel (in Fullscreen Mode)
+    const btnCollapseSidebar = document.getElementById('btn-collapse-sidebar');
+    if (btnCollapseSidebar) {
+        btnCollapseSidebar.addEventListener('click', () => {
+            const mapSidebar = document.querySelector('.map-sidebar');
+            if (mapSidebar) {
+                mapSidebar.classList.add('collapsed');
+                setTimeout(() => {
+                    if (mapInstance) {
+                        mapInstance.invalidateSize();
+                    }
+                }, 410);
+            }
+        });
+    }
+
+    // Expand Sidebar Panel (in Fullscreen Mode)
+    const btnToggleSidebar = document.getElementById('btn-toggle-sidebar');
+    if (btnToggleSidebar) {
+        btnToggleSidebar.addEventListener('click', () => {
+            const mapSidebar = document.querySelector('.map-sidebar');
+            if (mapSidebar) {
+                mapSidebar.classList.remove('collapsed');
+                setTimeout(() => {
+                    if (mapInstance) {
+                        mapInstance.invalidateSize();
+                    }
+                }, 410);
+            }
+        });
+    }
+
+    // Make All Routes Green (Clear Road Hazards)
+    const btnClearHazards = document.getElementById('btn-clear-hazards');
+    if (btnClearHazards) {
+        btnClearHazards.addEventListener('click', () => {
+            fetch('/api/road/clear_all', { method: 'POST' })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        // Reset collapsed road select dropdown
+                        const select = document.getElementById('collapse-road-select');
+                        if (select) select.value = "";
+                        
+                        // Hide undo collapse button
+                        const btnUndoCollapse = document.getElementById('btn-route-undo');
+                        if (btnUndoCollapse) btnUndoCollapse.style.display = 'none';
+                        
+                        loadDashboardData();
+                        
+                        // Clear active route overlays
+                        if (window.clearActiveRoute) window.clearActiveRoute();
+                        
+                        // Reset inspector UI
+                        const detailsContainer = document.getElementById('route-inspector-details');
+                        if (detailsContainer) {
+                            detailsContainer.innerHTML = `
+                                <div class="empty-state-small">
+                                    <i class="fa-solid fa-circle-info"></i>
+                                    <p>Click on any affected zone marker on the map to run Dijkstra's algorithm and view the safest optimal path.</p>
+                                </div>
+                            `;
+                        }
+                        alert("All roads reset to Normal (Green) successfully.");
+                    }
+                });
+        });
+    }
+
+    // Undo Dynamic +10 Zones
+    const btnUndoZones = document.getElementById('btn-undo-zones');
+    if (btnUndoZones) {
+        btnUndoZones.addEventListener('click', () => {
+            btnUndoZones.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Undoing...';
+            btnUndoZones.disabled = true;
+            
+            fetch('/api/simulate/large/undo', { method: 'POST' })
+                .then(res => res.json())
+                .then(data => {
+                    btnUndoZones.innerHTML = '<i class="fa-solid fa-arrow-rotate-left"></i> Undo Zones';
+                    btnUndoZones.disabled = false;
+                    
+                    if (data.status === 'success') {
+                        // Clear active route overlays
+                        if (window.clearActiveRoute) window.clearActiveRoute();
+                        
+                        loadDashboardData();
+                        alert(data.message);
+                    } else {
+                        alert("Failed to undo dynamic zones: " + data.message);
+                    }
+                });
+        });
+    }
+
+    // Depot Accessibility Report Modal Generation
+    const btnAccessibilityReport = document.getElementById('btn-accessibility-report');
+    if (btnAccessibilityReport) {
+        btnAccessibilityReport.addEventListener('click', () => {
+            const modal = document.getElementById('accessibility-modal');
+            const tbody = document.getElementById('accessibility-report-body');
+            if (!modal || !tbody) return;
+            
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="padding: 24px;"><i class="fa-solid fa-spinner fa-spin"></i> Generating Accessibility Report...</td></tr>';
+            modal.style.display = 'flex';
+            
+            const scenSelect = document.getElementById('scenario-select');
+            const scenario = scenSelect ? scenSelect.value : "";
+            
+            fetch(`/api/accessibility_report?scenario=${scenario}`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        tbody.innerHTML = '';
+                        if (data.report.length === 0) {
+                            tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="padding: 16px;">No active zones to display.</td></tr>';
+                            return;
+                        }
+                        data.report.forEach(row => {
+                            const tr = document.createElement('tr');
+                            
+                            // Accessibility Status Badge
+                            const statusBadge = row.is_accessible 
+                                ? '<span class="badge badge-success">Accessible</span>' 
+                                : '<span class="badge badge-danger">Unreachable</span>';
+                            
+                            // Depot Name
+                            const depotName = row.closest_depot ? row.closest_depot.split(' (')[0] : '-';
+                            
+                            // Path display
+                            const pathStr = row.is_accessible && row.current_path && row.current_path.length > 0
+                                ? row.current_path.map(n => n.split(' (')[0]).join(' → ')
+                                : (row.clean_path && row.clean_path.length > 0 
+                                    ? `<span style="color:var(--text-muted);">${row.clean_path.map(n => n.split(' (')[0]).join(' → ')} (Clean only)</span>` 
+                                    : '-');
+                            
+                            // Costs
+                            const currCost = row.is_accessible ? `${row.current_cost.toFixed(1)}` : '-';
+                            const cleanCost = row.clean_cost !== null ? `${row.clean_cost.toFixed(1)}` : '-';
+                            
+                            // Penalty
+                            let penaltyStr = '0.0';
+                            let penaltyClass = 'text-success';
+                            if (row.is_accessible && row.cost_penalty > 0) {
+                                penaltyStr = `+${row.cost_penalty.toFixed(1)}`;
+                                penaltyClass = 'text-warning';
+                            }
+                            if (!row.is_accessible) {
+                                penaltyStr = '-';
+                                penaltyClass = 'text-danger';
+                            }
+                            
+                            // Hazards listing
+                            let hazardDetails = '';
+                            if (row.is_accessible && row.hazards_on_path && row.hazards_on_path.length > 0) {
+                                const list = row.hazards_on_path.map(h => `${h.segment} (${h.risk_level})`).join(', ');
+                                hazardDetails = `<div style="font-size:10px; color:var(--text-secondary); margin-top:4px;"><i class="fa-solid fa-triangle-exclamation text-warning"></i> Hazards: ${list}</div>`;
+                            }
+                            
+                            tr.innerHTML = `
+                                <td>
+                                    <b>${row.zone_name.split(' (')[0]}</b>
+                                    ${hazardDetails}
+                                </td>
+                                <td>${statusBadge}</td>
+                                <td>${depotName}</td>
+                                <td style="font-family:monospace; font-size:11px;">${pathStr}</td>
+                                <td style="text-align:right; font-weight:600;">${currCost}</td>
+                                <td style="text-align:right; color:var(--text-secondary);">${cleanCost}</td>
+                                <td style="text-align:right; font-weight:700;" class="${penaltyClass}">${penaltyStr}</td>
+                             `;
+                            tbody.appendChild(tr);
+                        });
+                    } else {
+                        tbody.innerHTML = `<tr><td colspan="7" class="text-center text-danger" style="padding: 16px;">Failed to generate report: ${data.message}</td></tr>`;
+                    }
+                })
+                .catch(err => {
+                    tbody.innerHTML = `<tr><td colspan="7" class="text-center text-danger" style="padding: 16px;">Network error: ${err}</td></tr>`;
+                });
+        });
+    }
+
+    // Modal Close Triggers
+    const closeModal = () => {
+        const modal = document.getElementById('accessibility-modal');
+        if (modal) modal.style.display = 'none';
+    };
+
+    const btnCloseModal = document.getElementById('btn-close-modal');
+    if (btnCloseModal) {
+        btnCloseModal.addEventListener('click', closeModal);
+    }
+
+    const accModal = document.getElementById('accessibility-modal');
+    if (accModal) {
+        accModal.addEventListener('click', (e) => {
+            if (e.target === accModal) closeModal();
+        });
+    }
 }
 
 // ==========================================================================
