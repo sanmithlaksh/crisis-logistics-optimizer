@@ -528,41 +528,76 @@ function renderKnapsackOverview(dispatches) {
 
     validDispatches.forEach(d => {
         const itemBox = document.createElement('div');
-        itemBox.className = 'card glass-card'
+        itemBox.className = 'card glass-card';
         itemBox.style.marginBottom = '16px';
         itemBox.style.padding = '12px';
 
+        const vehicle = appData.vehicles.find(v => v.vehicle_id === d.vehicle_id);
+        const maxCapacity = vehicle ? vehicle.capacity_weight : 400;
+
         let loadRows = '';
+        let loadedWeight = 0;
+        let loadedValue = 0;
         Object.entries(d.loaded_resources).forEach(([name, qty]) => {
+            const res = appData.resources.find(r => r.resource_name === name);
+            const wt = res ? res.unit_weight : 0;
+            const val = res ? res.utility_value : 0;
+            const totalW = wt * qty;
+            const totalV = val * qty;
+            loadedWeight += totalW;
+            loadedValue += totalV;
+
             loadRows += `
                 <div class="knapsack-item-bar">
-                    <span>${name}</span>
-                    <span class="badge badge-success">${qty} loaded</span>
+                    <span>${name} (x${qty})</span>
+                    <span class="badge badge-success">${totalW.toFixed(1)} kg | +${totalV} pts</span>
                 </div>
             `;
         });
 
         let leftRows = '';
         Object.entries(d.left_behind_resources).forEach(([name, qty]) => {
+            const res = appData.resources.find(r => r.resource_name === name);
+            const wt = res ? res.unit_weight : 0;
+            const val = res ? res.utility_value : 0;
+            const totalW = wt * qty;
+            const totalV = val * qty;
+
             leftRows += `
                 <div class="knapsack-item-bar" style="border-color:rgba(255, 23, 68, 0.15)">
-                    <span>${name}</span>
-                    <span class="badge badge-danger">${qty} left behind</span>
+                    <span>${name} (x${qty})</span>
+                    <span class="badge badge-danger">${totalW.toFixed(1)} kg | -${totalV} pts</span>
                 </div>
             `;
         });
 
+        const shortZoneName = d.assigned_zone.split(' (')[0];
+
         itemBox.innerHTML = `
             <div style="font-weight:700; margin-bottom:10px; font-size:12px; color:var(--primary);">
-                ${d.vehicle_name} &rarr; ${d.assigned_zone}
+                ${d.vehicle_name} &rarr; ${shortZoneName}
             </div>
-            <div style="font-size:11px; margin-bottom:6px; color:var(--text-secondary);">
-                Capacity: <b>${d.distance_km} km</b> trip | Total Distance weight: <b>${d.distance_km}</b>
+            <div style="font-size:11px; margin-bottom:10px; color:var(--text-secondary); line-height: 1.4;">
+                Route Distance: <b>${d.distance_km.toFixed(1)} km</b> | Travel Time: <b>${d.travel_time_min.toFixed(1)} mins</b>
             </div>
             <div>
-                <p style="font-size:10px; font-weight:600; margin-bottom:4px; text-transform:uppercase;">Cargo Load:</p>
-                ${loadRows || '<p style="font-size:11px; color:var(--text-muted);">No cargo loaded.</p>'}
-                ${leftRows ? '<p style="font-size:10px; font-weight:600; margin:8px 0 4px 0; text-transform:uppercase;">Capacities Exceeded (Left Behind):</p>' + leftRows : ''}
+                <p style="font-size:10px; font-weight:600; margin-bottom:4px; text-transform:uppercase;">Cargo Load (${loadedWeight.toFixed(1)} / ${maxCapacity} kg):</p>
+                ${loadRows || '<p style="font-size:11px; color:var(--text-muted); margin:0;">No cargo loaded.</p>'}
+                ${leftRows ? '<p style="font-size:10px; font-weight:600; margin:10px 0 4px 0; text-transform:uppercase;">Capacities Exceeded (Left Behind):</p>' + leftRows : ''}
+            </div>
+            <div class="knapsack-rationale" style="margin-top:12px; padding-top:10px; border-top:1px dashed var(--border-glass); font-size:11px; color:var(--text-secondary); line-height: 1.4;">
+                <div style="font-weight:600; text-transform:uppercase; margin-bottom:6px; color:var(--warning); font-size:10px;">
+                    <i class="fa-solid fa-calculator"></i> Knapsack Optimization Rationale
+                </div>
+                <div style="margin-bottom:4px;">
+                    Hold Load Utilized: <b>${Math.round((loadedWeight / maxCapacity) * 100)}%</b>
+                </div>
+                <div style="margin-bottom:6px;">
+                    Total Delivered Utility: <b style="color:var(--success);">${loadedValue} points</b>
+                </div>
+                <p style="font-size:10px; line-height:1.4; color:var(--text-muted); margin:0;">
+                    <b>Algorithm Decision:</b> The 0/1 Knapsack DP solver prioritized items with the highest utility density (e.g. Medicine at 50 pts/kg, Food at 40 pts/kg) and left behind heavier, less efficient items (like Rescue Gear at 6 pts/kg) once the capacity of ${maxCapacity} kg was reached.
+                </p>
             </div>
         `;
         container.appendChild(itemBox);

@@ -19,6 +19,9 @@ class SimulationEngine:
             'requests': [
                 {'zone_id': 1, 'zone_name': 'Zone A (Glendale)', 'resource_type': 'Water Crate', 'quantity': 120, 'severity': 'Critical', 'population': 12000},
                 {'zone_id': 1, 'zone_name': 'Zone A (Glendale)', 'resource_type': 'Food Packets', 'quantity': 150, 'severity': 'Critical', 'population': 12000},
+                {'zone_id': 1, 'zone_name': 'Zone A (Glendale)', 'resource_type': 'Medicine', 'quantity': 50, 'severity': 'Critical', 'population': 12000},
+                {'zone_id': 1, 'zone_name': 'Zone A (Glendale)', 'resource_type': 'Fuel Ltrs', 'quantity': 100, 'severity': 'Critical', 'population': 12000},
+                {'zone_id': 1, 'zone_name': 'Zone A (Glendale)', 'resource_type': 'Rescue Gear', 'quantity': 10, 'severity': 'Critical', 'population': 12000},
                 {'zone_id': 2, 'zone_name': 'Zone B (Pasadena)', 'resource_type': 'Water Crate', 'quantity': 80, 'severity': 'High', 'population': 18000},
                 {'zone_id': 3, 'zone_name': 'Zone C (East LA)', 'resource_type': 'Food Packets', 'quantity': 200, 'severity': 'Medium', 'population': 25000},
                 {'zone_id': 4, 'zone_name': 'Zone D (Torrance)', 'resource_type': 'Water Crate', 'quantity': 100, 'severity': 'Critical', 'population': 15000},
@@ -38,6 +41,9 @@ class SimulationEngine:
             'requests': [
                 {'zone_id': 4, 'zone_name': 'Zone D (Torrance)', 'resource_type': 'Medicine', 'quantity': 80, 'severity': 'Critical', 'population': 15000},
                 {'zone_id': 4, 'zone_name': 'Zone D (Torrance)', 'resource_type': 'Rescue Gear', 'quantity': 15, 'severity': 'Critical', 'population': 15000},
+                {'zone_id': 4, 'zone_name': 'Zone D (Torrance)', 'resource_type': 'Food Packets', 'quantity': 150, 'severity': 'Critical', 'population': 15000},
+                {'zone_id': 4, 'zone_name': 'Zone D (Torrance)', 'resource_type': 'Water Crate', 'quantity': 100, 'severity': 'Critical', 'population': 15000},
+                {'zone_id': 4, 'zone_name': 'Zone D (Torrance)', 'resource_type': 'Fuel Ltrs', 'quantity': 50, 'severity': 'Critical', 'population': 15000},
                 {'zone_id': 6, 'zone_name': 'Zone F (Hollywood)', 'resource_type': 'Medicine', 'quantity': 100, 'severity': 'Critical', 'population': 22000},
                 {'zone_id': 8, 'zone_name': 'Zone H (Malibu)', 'resource_type': 'Rescue Gear', 'quantity': 10, 'severity': 'Low', 'population': 8000},
                 {'zone_id': 11, 'zone_name': 'Zone K (Beverly Hills)', 'resource_type': 'Medicine', 'quantity': 60, 'severity': 'Medium', 'population': 9000},
@@ -54,6 +60,10 @@ class SimulationEngine:
             },
             'requests': [
                 {'zone_id': 5, 'zone_name': 'Zone E (Santa Monica)', 'resource_type': 'Food Packets', 'quantity': 200, 'severity': 'Critical', 'population': 10000},
+                {'zone_id': 5, 'zone_name': 'Zone E (Santa Monica)', 'resource_type': 'Water Crate', 'quantity': 150, 'severity': 'Critical', 'population': 10000},
+                {'zone_id': 5, 'zone_name': 'Zone E (Santa Monica)', 'resource_type': 'Medicine', 'quantity': 80, 'severity': 'Critical', 'population': 10000},
+                {'zone_id': 5, 'zone_name': 'Zone E (Santa Monica)', 'resource_type': 'Fuel Ltrs', 'quantity': 100, 'severity': 'Critical', 'population': 10000},
+                {'zone_id': 5, 'zone_name': 'Zone E (Santa Monica)', 'resource_type': 'Rescue Gear', 'quantity': 15, 'severity': 'Critical', 'population': 10000},
                 {'zone_id': 11, 'zone_name': 'Zone K (Beverly Hills)', 'resource_type': 'Food Packets', 'quantity': 100, 'severity': 'Medium', 'population': 9000},
                 {'zone_id': 3, 'zone_name': 'Zone C (East LA)', 'resource_type': 'Water Crate', 'quantity': 120, 'severity': 'High', 'population': 25000},
                 {'zone_id': 4, 'zone_name': 'Zone D (Torrance)', 'resource_type': 'Food Packets', 'quantity': 180, 'severity': 'High', 'population': 15000},
@@ -71,6 +81,9 @@ class SimulationEngine:
             'requests': [
                 {'zone_id': 1, 'zone_name': 'Zone A (Glendale)', 'resource_type': 'Medicine', 'quantity': 60, 'severity': 'Critical', 'population': 12000},
                 {'zone_id': 1, 'zone_name': 'Zone A (Glendale)', 'resource_type': 'Fuel Ltrs', 'quantity': 100, 'severity': 'Critical', 'population': 12000},
+                {'zone_id': 1, 'zone_name': 'Zone A (Glendale)', 'resource_type': 'Food Packets', 'quantity': 150, 'severity': 'Critical', 'population': 12000},
+                {'zone_id': 1, 'zone_name': 'Zone A (Glendale)', 'resource_type': 'Water Crate', 'quantity': 100, 'severity': 'Critical', 'population': 12000},
+                {'zone_id': 1, 'zone_name': 'Zone A (Glendale)', 'resource_type': 'Rescue Gear', 'quantity': 10, 'severity': 'Critical', 'population': 12000},
                 {'zone_id': 9, 'zone_name': 'Zone I (Burbank)', 'resource_type': 'Medicine', 'quantity': 50, 'severity': 'Medium', 'population': 14000},
                 {'zone_id': 2, 'zone_name': 'Zone B (Pasadena)', 'resource_type': 'Fuel Ltrs', 'quantity': 80, 'severity': 'High', 'population': 18000},
                 {'zone_id': 10, 'zone_name': 'Zone J (Anaheim)', 'resource_type': 'Fuel Ltrs', 'quantity': 150, 'severity': 'High', 'population': 35000}
